@@ -68,11 +68,67 @@ flutter analyze
 
 ### 2. Speech-to-Text Setup Requirements
 To enable live cloud speech recognition:
-1. **Production (Supabase Edge Function):**
+1. **Production Target (Supabase Edge Function Proxy):**
    - Deploy `guardcall-stt` Edge Function in your Supabase project.
-   - Set `STT_BACKEND=edge_function` in environment.
+   - Provider API keys (Whisper/Google STT) stay securely in Supabase server secrets (`supabase secrets set STT_API_KEY=...`).
+   - Configure `.env`:
+     ```bash
+     SUPABASE_URL=https://<your-project-id>.supabase.co
+     SUPABASE_ANON_KEY=<your-anon-key>
+     USE_SUPABASE=true
+     STT_BACKEND=edge_function
+     ```
 2. **Local Developer Direct STT:**
-   - Configure `STT_BACKEND=direct_dev` and `STT_API_KEY=<provider_key>` in `.env`.
+   - Configure `.env`:
+     ```bash
+     USE_CLOUD_STT=true
+     STT_BACKEND=direct_dev
+     STT_PROVIDER=remote
+     SPEECH_TO_TEXT_API_KEY=<provider-api-key>
+     ```
 3. **Offline / Test Automation Default:**
-   - Defaults safely to `STT_BACKEND=mock` or programmatic test feeds without external network calls.
+   - Defaults safely to `STT_BACKEND=mock` without making external network calls.
+
+---
+
+## 6. Real Microphone Capture & STT Validation (Step 6)
+
+### 1. Audio Capture Pipeline Specifications
+- **Format:** 16,000 Hz, 16-bit linear PCM, 1 channel (Mono).
+- **Encoding:** `audio/pcm;rate=16000;channels=1`.
+- **Buffer Scope:** Ephemeral in-memory streaming; buffers are discarded immediately after transcription.
+- **Hardware Binding:** Without external native audio plugins, `DefaultMicrophoneAudioCaptureService` operates as an in-memory stream adapter with amplitude visualizer and PCM chunk passthrough. When integrating native audio packages (e.g. `record` or custom Android MethodChannels), PCM chunks are fed directly via `feedAudioBytes(List<int> bytes)`.
+
+### 2. Expected Behavior When Offline or Unconfigured
+- **Honest UI Indicators:** If no STT backend is configured, the UI clearly displays:
+  - Header badge: `ACOUSTIC ONLY` / `STANDBY` (never claims `LIVE RECOGNIZER ACTIVE`).
+  - Pipeline status: `Speech Recognizer (ASR): Offline / Unconfigured`.
+  - Transcript section: Labeled as `Manual Speech Test: Type spoken phrases here to test scam heuristics without a live ASR backend.`
+- **Zero Silent Fallback:** The application never generates fake transcripts or claims speech recognition occurred when operating offline.
+
+### 3. Android Device Testing Procedure
+When testing on a real Android device or emulator:
+1. **Microphone Permission:**
+   - Launch app -> Navigate to **Calls** -> Tap **Start Microphone Shield**.
+   - Verify Android runtime permission prompt appears (`RECORD_AUDIO`).
+   - Test **Deny**: Verify error message surfaces clearly.
+   - Test **Settings**: Verify permanently denied prompt routes to device settings.
+   - Test **Grant**: Verify capture begins with live amplitude meter.
+2. **Speakerphone / Ambient Call Testing:**
+   - Place a second phone on speakerphone next to the test device.
+   - Speak phrases containing compounding scam tokens:
+     * *"This is police investigation regarding arrest warrant, transfer money immediately."*
+   - Verify risk score escalates to **Critical Threat (85+)**.
+   - Verify single warning intervention popup fires without duplicate spam on partial updates.
+3. **Interruption & Resource Cleanup:**
+   - Trigger an incoming phone call or press the home button.
+   - Verify capture pauses or stops cleanly without leaking audio drivers.
+4. **Logcat Monitoring:**
+   ```bash
+   adb logcat -s Flutter | grep -i "microphone"
+   ```
+
+### 4. Privacy & Telephony Boundaries
+- Standard Android security prohibits third-party user applications from recording or intercepting cellular telephone call audio directly (`VOICE_CALL` audio source is restricted to system dialers).
+- GuardCall operates honestly in ambient/speakerphone mode and does not claim background cellular wiretapping.
 

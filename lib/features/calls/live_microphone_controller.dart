@@ -6,6 +6,7 @@ import '../detection/detection_provider_factory.dart';
 import '../detection/live_speech_recognition_service.dart';
 import '../detection/microphone_audio_capture_service.dart';
 import '../detection/microphone_permission_handler.dart';
+import '../detection/mock_scam_detection_engine.dart';
 import '../detection/risk_analysis.dart';
 import '../detection/scam_detection_engine.dart';
 import '../history/call_history_repository.dart';
@@ -39,6 +40,7 @@ class LiveMicrophoneController extends ChangeNotifier {
   StreamSubscription<AudioCaptureState>? _captureStateSub;
   StreamSubscription<double>? _audioLevelSub;
   StreamSubscription<LiveSpeechSegment>? _segmentSub;
+  StreamSubscription<List<int>>? _audioDataSub;
 
   LiveMicrophoneController({
     MicrophonePermissionHandler? permissionHandler,
@@ -65,6 +67,53 @@ class LiveMicrophoneController extends ChangeNotifier {
   bool get isCapturing => _captureState == AudioCaptureState.capturing;
   bool get isWarningActive => _warningModalActive;
 
+  // Diagnostics Getters
+  bool get isSttConfigured => _speechRecognitionService.isConfigured;
+  String get sttProviderName => _speechRecognitionService.providerName;
+  DateTime? get lastTranscriptionTime => _speechRecognitionService.lastTranscriptionTime;
+  bool get isLiveTranscriptionActive => isCapturing && isSttConfigured;
+
+  String get audioCaptureDetails =>
+      '${_audioCaptureService.sampleRate}Hz • ${_audioCaptureService.channelCount == 1 ? "Mono" : "Stereo"} • ${_audioCaptureService.bitDepth}-bit';
+
+  String get captureAvailabilityDescription {
+    if (_captureState == AudioCaptureState.capturing) {
+      return _audioCaptureService.isHardwareBound
+          ? 'Capturing Live Audio ($audioCaptureDetails)'
+          : 'Active Capture ($audioCaptureDetails, Volatile Buffer)';
+    } else if (_captureState == AudioCaptureState.interrupted) {
+      return 'Interrupted (Audio Focus Lost)';
+    } else if (_captureState == AudioCaptureState.error) {
+      return 'Capture Error';
+    }
+    return 'Idle / Standby';
+  }
+
+  String get sttStatusDescription {
+    if (isSttConfigured) {
+      return '$sttProviderName (Ready)';
+    }
+    return '$sttProviderName (Unconfigured)';
+  }
+
+  String get lastTranscriptionStatus {
+    if (_transcriptSegments.isNotEmpty) {
+      final lastTime = lastTranscriptionTime;
+      final timeLabel = lastTime != null
+          ? '${lastTime.hour.toString().padLeft(2, '0')}:${lastTime.minute.toString().padLeft(2, '0')}:${lastTime.second.toString().padLeft(2, '0')}'
+          : 'Active';
+      return '${_transcriptSegments.length} utterances recorded (Last: $timeLabel)';
+    }
+    return 'No speech transcribed yet';
+  }
+
+  String get riskEngineStatusDescription {
+    if (_detectionEngine is MockScamDetectionEngine) {
+      return 'On-Device Heuristic Engine (6 Signal Categories)';
+    }
+    return 'Remote / Edge AI Engine (Active)';
+  }
+
   /// Initializes permission and subscribes to audio and transcription streams.
   Future<void> initialize() async {
     _permissionStatus = await _permissionHandler.checkPermission();
@@ -76,7 +125,9 @@ class LiveMicrophoneController extends ChangeNotifier {
       } else if (state == AudioCaptureState.stopped) {
         _statusMessage = 'Microphone shield stopped.';
       } else if (state == AudioCaptureState.capturing) {
-        _statusMessage = 'Microphone active: monitoring ambient speech patterns...';
+        _statusMessage = isSttConfigured
+            ? 'Microphone active: monitoring ambient speech patterns...'
+            : 'Microphone active: acoustic levels only (ASR unconfigured).';
       }
       notifyListeners();
     });
@@ -88,6 +139,11 @@ class LiveMicrophoneController extends ChangeNotifier {
 
     _segmentSub = _speechRecognitionService.segmentStream.listen((segment) {
       processSpeechSegment(segment);
+    });
+
+    // Pipe PCM chunks directly to speech recognition service
+    _audioDataSub = _audioCaptureService.audioDataStream.listen((bytes) {
+      _speechRecognitionService.processAudioBytes(bytes).catchError((_) {});
     });
 
     notifyListeners();
@@ -136,7 +192,12 @@ class LiveMicrophoneController extends ChangeNotifier {
         },
       );
 
-      _statusMessage = 'Microphone active: listening and evaluating speech...';
+      if (isSttConfigured) {
+        _statusMessage = 'Microphone active: listening and evaluating speech...';
+      } else {
+        _statusMessage =
+            'Microphone active: monitoring acoustic levels (ASR unconfigured; use manual test input below).';
+      }
     } catch (e) {
       _errorMessage = 'Failed to start microphone capture: $e';
       await _audioCaptureService.stopCapture();
@@ -292,6 +353,7 @@ class LiveMicrophoneController extends ChangeNotifier {
     _captureStateSub?.cancel();
     _audioLevelSub?.cancel();
     _segmentSub?.cancel();
+    _audioDataSub?.cancel();
 
     _speechRecognitionService.dispose();
     _audioCaptureService.release();

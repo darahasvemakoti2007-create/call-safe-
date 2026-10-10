@@ -249,6 +249,98 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
                     const SizedBox(height: 16),
                   ],
 
+                  // Pipeline Diagnostics Card
+                  GlassCard(
+                    key: const Key('pipeline_diagnostics_card'),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.monitor_heart_outlined,
+                                    color: AppTheme.skyAccent, size: 18),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Pipeline Diagnostics',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.textPrimary,
+                                      ),
+                                ),
+                              ],
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: _controller.isLiveTranscriptionActive
+                                    ? AppTheme.tealPrimary.withValues(alpha: 0.15)
+                                    : AppTheme.navySurfaceLight,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: _controller.isLiveTranscriptionActive
+                                      ? AppTheme.tealPrimary.withValues(alpha: 0.4)
+                                      : AppTheme.navyBorder,
+                                ),
+                              ),
+                              child: Text(
+                                _controller.isLiveTranscriptionActive
+                                    ? 'LIVE RECOGNIZER ACTIVE'
+                                    : (isCapturing ? 'ACOUSTIC ONLY' : 'STANDBY'),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: _controller.isLiveTranscriptionActive
+                                      ? AppTheme.tealPrimary
+                                      : AppTheme.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _buildDiagnosticRow(
+                          context,
+                          label: 'Microphone Permission',
+                          value: permission.name.toUpperCase(),
+                          isGood: permission.isGranted,
+                        ),
+                        const SizedBox(height: 6),
+                        _buildDiagnosticRow(
+                          context,
+                          label: 'Audio Capture',
+                          value: _controller.captureAvailabilityDescription,
+                          isGood: isCapturing,
+                        ),
+                        const SizedBox(height: 6),
+                        _buildDiagnosticRow(
+                          context,
+                          label: 'Speech Recognizer (ASR)',
+                          value: _controller.sttStatusDescription,
+                          isGood: _controller.isSttConfigured,
+                        ),
+                        const SizedBox(height: 6),
+                        _buildDiagnosticRow(
+                          context,
+                          label: 'Last Transcription',
+                          value: _controller.lastTranscriptionStatus,
+                          isGood: _controller.transcriptSegments.isNotEmpty,
+                        ),
+                        const SizedBox(height: 6),
+                        _buildDiagnosticRow(
+                          context,
+                          label: 'Scam Detection Engine',
+                          value: _controller.riskEngineStatusDescription,
+                          isGood: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
                   // Primary Microphone Control Area
                   GlassCard(
                     padding: const EdgeInsets.all(20),
@@ -282,7 +374,9 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
                                 const SizedBox(width: 10),
                                 Text(
                                   isCapturing
-                                      ? 'Microphone Active • ${_controller.sessionDurationSeconds}s'
+                                      ? (_controller.isLiveTranscriptionActive
+                                          ? 'Microphone Active • ${_controller.sessionDurationSeconds}s'
+                                          : 'Acoustic Monitoring • ${_controller.sessionDurationSeconds}s')
                                       : 'Microphone Idle',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w700,
@@ -418,8 +512,12 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
 
                   // Live Transcription Stream Section
                   SectionHeader(
-                    title: 'Live Transcript Stream',
-                    subtitle: 'Real-time text recognized from microphone stream',
+                    title: _controller.isSttConfigured
+                        ? 'Live Transcript Stream'
+                        : 'Spoken Transcript Stream',
+                    subtitle: _controller.isSttConfigured
+                        ? 'Real-time text recognized from microphone stream'
+                        : 'Showing recognized dialogue and manual test utterances',
                     trailing: TextButton.icon(
                       style: TextButton.styleFrom(
                         foregroundColor: AppTheme.skyAccent,
@@ -432,7 +530,9 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
                         size: 16,
                       ),
                       label: Text(
-                        _showManualInput ? 'Hide Input' : 'Type Utterance',
+                        _showManualInput
+                            ? 'Hide Input'
+                            : (_controller.isSttConfigured ? 'Type Utterance' : 'Manual Test Input'),
                         style: const TextStyle(fontSize: 12),
                       ),
                       onPressed: () {
@@ -444,6 +544,29 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
 
                   // Manual Text Input Bar (for testing/accessibility)
                   if (_showManualInput) ...[
+                    if (!_controller.isSttConfigured) ...[
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.navySurfaceLight,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.navyBorder),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline_rounded, color: AppTheme.skyAccent, size: 16),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Manual Speech Test: Type spoken phrases here to test scam heuristics without a live ASR backend.',
+                                style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -458,9 +581,11 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
                               key: const Key('manual_speech_input_field'),
                               controller: _testTextController,
                               style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
-                              decoration: const InputDecoration(
-                                hintText: 'Enter test spoken phrase (e.g. "urgent OTP code")...',
-                                hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                              decoration: InputDecoration(
+                                hintText: _controller.isSttConfigured
+                                    ? 'Enter test spoken phrase (e.g. "urgent OTP code")...'
+                                    : 'Enter spoken phrase manually (Simulated ASR)...',
+                                hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
                                 border: InputBorder.none,
                                 isDense: true,
                               ),
@@ -600,6 +725,42 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
           },
         ),
       ),
+    );
+  }
+
+  Widget _buildDiagnosticRow(
+    BuildContext context, {
+    required String label,
+    required String value,
+    required bool isGood,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 5,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppTheme.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        Expanded(
+          flex: 6,
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: isGood ? AppTheme.tealLight : AppTheme.skyAccent,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

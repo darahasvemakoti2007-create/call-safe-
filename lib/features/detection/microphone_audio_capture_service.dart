@@ -66,6 +66,21 @@ abstract class MicrophoneAudioCaptureService {
   /// Stream of normalized audio volume/amplitude levels (0.0 to 1.0).
   Stream<double> get audioLevelStream;
 
+  /// Sampling rate in Hz (standard 16000 for acoustic speech recognition).
+  int get sampleRate;
+
+  /// Audio channel count (1 for mono).
+  int get channelCount;
+
+  /// Audio bit depth (16 for 16-bit linear PCM).
+  int get bitDepth;
+
+  /// Audio encoding description.
+  String get encoding;
+
+  /// Whether real native hardware capture is bound and streaming.
+  bool get isHardwareBound;
+
   /// Starts capturing audio from the physical microphone.
   Future<void> startCapture();
 
@@ -92,6 +107,21 @@ class DefaultMicrophoneAudioCaptureService implements MicrophoneAudioCaptureServ
 
   Timer? _levelTimer;
   bool _isReleased = false;
+
+  @override
+  int get sampleRate => 16000;
+
+  @override
+  int get channelCount => 1;
+
+  @override
+  int get bitDepth => 16;
+
+  @override
+  String get encoding => 'audio/pcm;rate=16000;channels=1';
+
+  @override
+  bool get isHardwareBound => false;
 
   @override
   AudioCaptureState get state => _state;
@@ -177,6 +207,16 @@ class DefaultMicrophoneAudioCaptureService implements MicrophoneAudioCaptureServ
     await _audioDataController.close();
     await _audioLevelController.close();
   }
+
+  /// Manually feeds a chunk of PCM audio bytes into the audio data stream.
+  ///
+  /// Used by native audio platform channels or audio test fixtures.
+  void feedAudioBytes(List<int> bytes) {
+    if (_isReleased || _state != AudioCaptureState.capturing) return;
+    if (!_audioDataController.isClosed) {
+      _audioDataController.add(bytes);
+    }
+  }
 }
 
 /// Mock capture service for unit and widget testing.
@@ -195,6 +235,21 @@ class MockMicrophoneAudioCaptureService implements MicrophoneAudioCaptureService
   int interruptCount = 0;
 
   AudioCaptureException? pendingErrorOnStart;
+
+  @override
+  int sampleRate = 16000;
+
+  @override
+  int channelCount = 1;
+
+  @override
+  int bitDepth = 16;
+
+  @override
+  String encoding = 'audio/pcm;rate=16000;channels=1';
+
+  @override
+  bool isHardwareBound = false;
 
   @override
   AudioCaptureState get state => _state;

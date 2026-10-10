@@ -2,6 +2,9 @@ import 'dart:async';
 import '../../core/config/app_config.dart';
 import 'audio_input.dart';
 import 'detection_provider_factory.dart';
+import 'edge_function_speech_to_text_service.dart';
+import 'mock_speech_to_text_service.dart';
+import 'remote_speech_to_text_service.dart';
 import 'speech_to_text_service.dart';
 
 /// Represents a recognized spoken segment in real time.
@@ -55,6 +58,18 @@ abstract class LiveSpeechRecognitionService {
   /// Whether the service is currently actively listening.
   bool get isListening;
 
+  /// Whether a live ASR backend is configured and ready.
+  bool get isConfigured;
+
+  /// The name/tier of the active ASR provider.
+  String get providerName;
+
+  /// Timestamp of the last successful speech transcription.
+  DateTime? get lastTranscriptionTime;
+
+  /// Last error message encountered during recognition, if any.
+  String? get lastError;
+
   /// Stream of recognized interim and final speech segments.
   Stream<LiveSpeechSegment> get segmentStream;
 
@@ -63,6 +78,9 @@ abstract class LiveSpeechRecognitionService {
     required void Function(LiveSpeechSegment segment) onSegment,
     required void Function(String error) onError,
   });
+
+  /// Feeds a chunk of PCM audio bytes into the recognition engine.
+  Future<void> processAudioBytes(List<int> bytes);
 
   /// Stops speech recognition.
   Future<void> stopListening();
@@ -85,6 +103,10 @@ class DefaultLiveSpeechRecognitionService implements LiveSpeechRecognitionServic
 
   bool _isListening = false;
   bool _isDisposed = false;
+  DateTime? _lastTranscriptionTime;
+  String? _lastError;
+  void Function(String error)? _onError;
+  void Function(LiveSpeechSegment segment)? _onSegment;
 
   DefaultLiveSpeechRecognitionService({
     SpeechToTextService? sttService,
@@ -92,6 +114,39 @@ class DefaultLiveSpeechRecognitionService implements LiveSpeechRecognitionServic
 
   @override
   bool get isListening => _isListening;
+
+  @override
+  bool get isConfigured {
+    final config = AppConfig.current;
+    if (_sttService is! MockSpeechToTextService) {
+      return true;
+    }
+    return config.isEdgeFunctionSttConfigured || config.isCloudSttConfigured;
+  }
+
+  @override
+  String get providerName {
+    if (_sttService is EdgeFunctionSpeechToTextService) {
+      return 'Supabase Edge Function (guardcall-stt)';
+    } else if (_sttService is RemoteSpeechToTextService) {
+      return 'Direct Cloud STT (OpenAI/Whisper)';
+    } else if (_sttService is MockSpeechToTextService) {
+      final config = AppConfig.current;
+      if (config.isEdgeFunctionSttConfigured) {
+        return 'Supabase Edge Function (Configured)';
+      } else if (config.isCloudSttConfigured) {
+        return 'Direct Cloud STT (Configured)';
+      }
+      return 'Offline / Unconfigured';
+    }
+    return 'Custom Provider (${_sttService.runtimeType})';
+  }
+
+  @override
+  DateTime? get lastTranscriptionTime => _lastTranscriptionTime;
+
+  @override
+  String? get lastError => _lastError;
 
   @override
   Stream<LiveSpeechSegment> get segmentStream => _segmentController.stream;
@@ -103,25 +158,38 @@ class DefaultLiveSpeechRecognitionService implements LiveSpeechRecognitionServic
   }) async {
     if (_isDisposed) return;
     _isListening = true;
+    _onSegment = onSegment;
+    _onError = onError;
+    _lastError = null;
 
     final config = AppConfig.current;
-    final isConfigured = config.isEdgeFunctionSttConfigured || config.isCloudSttConfigured;
+    final configured = isConfigured;
 
-    if (!isConfigured && config.sttBackend != 'mock') {
-      onError(
-        'Real-time Speech-to-Text requires configuring the Supabase Edge Function STT proxy '
-        'or specifying a speech recognition provider in .env. Setup instructions are documented '
-        'in DEVELOPMENT_GUIDE.md.',
-      );
+    if (!configured && config.sttBackend != 'mock') {
+      const msg = 'Real-time Speech-to-Text requires configuring the Supabase Edge Function STT proxy '
+          'or specifying a speech recognition provider in .env. Setup instructions are documented '
+          'in DEVELOPMENT_GUIDE.md.';
+      _lastError = msg;
+      onError(msg);
     }
   }
 
   /// Sends a raw audio buffer to the underlying [SpeechToTextService] for batch transcription.
+  @override
   Future<void> processAudioBytes(List<int> bytes) async {
     if (!_isListening || _isDisposed) return;
+    if (bytes.isEmpty) {
+      _lastError = 'Audio chunk is empty.';
+      throw const SpeechToTextException(
+        SpeechToTextErrorType.emptyAudio,
+        'Cannot transcribe empty audio buffer.',
+      );
+    }
     try {
       final input = AudioInput.bytes(bytes, label: 'Microphone Stream');
       final lines = await _sttService.transcribeAudio(input);
+      _lastTranscriptionTime = DateTime.now();
+      _lastError = null;
       for (final line in lines) {
         final segment = LiveSpeechSegment(
           text: line.text,
@@ -132,9 +200,12 @@ class DefaultLiveSpeechRecognitionService implements LiveSpeechRecognitionServic
         if (!_segmentController.isClosed) {
           _segmentController.add(segment);
         }
+        _onSegment?.call(segment);
       }
-    } catch (_) {
-      // Ignored for empty audio or offline notice
+    } catch (e) {
+      _lastError = e.toString();
+      _onError?.call(_lastError!);
+      rethrow;
     }
   }
 
@@ -162,20 +233,43 @@ class MockLiveSpeechRecognitionService implements LiveSpeechRecognitionService {
 
   bool _isListening = false;
   bool _isDisposed = false;
+  bool configured = false;
+  String customProviderName = 'Mock ASR';
+  DateTime? _lastTranscriptionTime;
+  String? _lastError;
 
   bool get isDisposed => _isDisposed;
 
   int startCount = 0;
   int stopCount = 0;
   int disposeCount = 0;
+  int processAudioCount = 0;
 
   void Function(LiveSpeechSegment)? _onSegmentCallback;
   void Function(String)? _onErrorCallback;
 
   String? pendingErrorOnStart;
 
+  MockLiveSpeechRecognitionService({
+    bool isConfigured = false,
+    String providerName = 'Mock ASR',
+  })  : configured = isConfigured,
+        customProviderName = providerName;
+
   @override
   bool get isListening => _isListening;
+
+  @override
+  bool get isConfigured => configured;
+
+  @override
+  String get providerName => customProviderName;
+
+  @override
+  DateTime? get lastTranscriptionTime => _lastTranscriptionTime;
+
+  @override
+  String? get lastError => _lastError;
 
   @override
   Stream<LiveSpeechSegment> get segmentStream => _segmentController.stream;
@@ -190,11 +284,24 @@ class MockLiveSpeechRecognitionService implements LiveSpeechRecognitionService {
     _onErrorCallback = onError;
 
     if (pendingErrorOnStart != null) {
+      _lastError = pendingErrorOnStart;
       onError(pendingErrorOnStart!);
       return;
     }
 
     _isListening = true;
+  }
+
+  @override
+  Future<void> processAudioBytes(List<int> bytes) async {
+    processAudioCount++;
+    if (bytes.isEmpty) {
+      throw const SpeechToTextException(
+        SpeechToTextErrorType.emptyAudio,
+        'Cannot transcribe empty audio buffer.',
+      );
+    }
+    _lastTranscriptionTime = DateTime.now();
   }
 
   @override
@@ -213,6 +320,7 @@ class MockLiveSpeechRecognitionService implements LiveSpeechRecognitionService {
 
   /// Programmatically emits a speech segment to simulate recognized speech.
   void emitSegment(LiveSpeechSegment segment) {
+    _lastTranscriptionTime = DateTime.now();
     if (!_segmentController.isClosed) {
       _segmentController.add(segment);
     }
@@ -221,6 +329,7 @@ class MockLiveSpeechRecognitionService implements LiveSpeechRecognitionService {
 
   /// Programmatically emits an error.
   void emitError(String error) {
+    _lastError = error;
     _onErrorCallback?.call(error);
   }
 }
