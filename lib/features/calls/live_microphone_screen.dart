@@ -151,7 +151,7 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '• Zero Audio Retention: Acoustic audio is processed in volatile memory for speech recognition and immediately discarded.\n'
+                          '• Volatile In-Memory Processing: GuardCall never persists raw audio to disk or permanent storage. If configured with an external speech provider, audio buffers are transmitted securely for transcription subject to provider privacy policies.\n'
                           '• Speakerphone / Ambient Capture Only: Operating system security prevents capturing internal cellular call audio directly. Place calls on speakerphone to analyze speech.\n'
                           '• Explicit Control: Microphone activates only when you tap Start and stops immediately on command.',
                           style: theme.textTheme.bodySmall?.copyWith(

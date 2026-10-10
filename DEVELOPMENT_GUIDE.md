@@ -178,4 +178,53 @@ To achieve optimal latency and 100% compliant audio capture without third-party 
   5. Speak into the microphone; observe real-time waveform reacting to vocal amplitude.
   6. Tap **Stop Shield**; verify `AudioRecord` stops and native audio resources are released immediately.
 
+---
+
+## 8. Genuine Live Speech-to-Text Pipeline (Step 8)
+
+### 1. Audio Container & Chunk Aggregation Architecture
+Raw 16-bit linear PCM microphone streams (produced every ~128ms) cannot be submitted directly as complete recordings to batch STT engines. GuardCall implements a bounded in-memory aggregation pipeline:
+
+- **WAV Packaging (`WavEncoder`):** Converts raw linear PCM byte buffers into standard 44-byte RIFF/WAVE (`audio/wav`) containers at 16,000 Hz, 1 channel (Mono), 16 bits per sample.
+- **Bounded In-Memory Buffer:**
+  - `bufferThresholdBytes: 48000` (~1.5 seconds of speech): Accumulates micro-chunks in volatile RAM before dispatching to the STT backend.
+  - `maxBufferSize: 160000` (5.0 seconds maximum): Strict upper bound that trims oldest samples to prevent unbounded volatile memory consumption.
+  - **Flush on Stop:** When capture stops or the screen disposes, any pending buffered speech is flushed and evaluated immediately.
+
+### 2. Speech-to-Text Backend Integration Modes
+1. **Production Architecture — Supabase Edge Function (`guardcall-stt`):**
+   - Enabled via:
+     ```bash
+     USE_CLOUD_STT=true
+     STT_BACKEND=edge_function
+     STT_PROVIDER=edge_function
+     ```
+   - Client sends base64-encoded WAV containers over authenticated HTTPS to the Edge Function proxy.
+   - Provider API keys (OpenAI Whisper or Google Cloud Speech) reside strictly in server-side Edge Function secrets and are never bundled in the mobile application binary.
+2. **Local Development Mode — Direct Cloud STT (`RemoteSpeechToTextService`):**
+   - Enabled via:
+     ```bash
+     USE_CLOUD_STT=true
+     STT_BACKEND=direct_dev
+     STT_PROVIDER=remote
+     SPEECH_TO_TEXT_API_KEY=<openai-api-key>
+     ```
+   - Intended exclusively for local developer experimentation. Secrets in `.env` are excluded from Git via `.gitignore`.
+3. **Offline / Safe Default (`MockSpeechToTextService`):**
+   - Automatically selected when credentials are unconfigured or placeholder strings (`STT_BACKEND=mock`).
+   - Prevents network failure crashes and enables offline-first demonstration.
+
+### 3. Transcript Processing & Threat Assessment Flow
+1. **Response Ingestion:** Provider responses are parsed into chronological [LiveSpeechSegment](file:///lib/features/detection/live_speech_recognition_service.dart#L11) items.
+2. **Scam Risk Evaluation:** Real recognized phrases are piped directly to [ScamDetectionEngine](file:///lib/features/detection/scam_detection_engine.dart).
+3. **Warning Deduplication:** Warnings trigger only when a critical or high-risk threshold is crossed, preventing repeated popups on incremental hypotheses.
+4. **History Logging:** Persists completed assessments to [CallHistoryRepository](file:///lib/features/history/call_history_repository.dart) with `isSimulated: false` only after genuine speech has been transcribed and scored.
+5. **UI Truthfulness:** If the recognizer encounters an error or is unconfigured, the pipeline displays `ACOUSTIC ONLY` rather than falsely claiming `LIVE RECOGNIZER ACTIVE`.
+
+### 4. Privacy & Telephony Disclosure
+- **Volatile In-Memory Processing:** GuardCall maintains zero raw audio retention on the local device or Supabase database.
+- **External Provider Disclosure:** If an external STT service is configured, audio buffers are transmitted securely over HTTPS and are subject to the provider's API privacy policy (e.g. OpenAI's 30-day API data retention policy).
+- **Speakerphone / Ambient Only:** GuardCall operates in speakerphone mode and does not wiretap background cellular telephone calls.
+
+
 

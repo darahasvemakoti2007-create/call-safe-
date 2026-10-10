@@ -6,6 +6,7 @@ import 'edge_function_speech_to_text_service.dart';
 import 'mock_speech_to_text_service.dart';
 import 'remote_speech_to_text_service.dart';
 import 'speech_to_text_service.dart';
+import 'wav_encoder.dart';
 
 /// Represents a recognized spoken segment in real time.
 class LiveSpeechSegment {
@@ -101,6 +102,20 @@ class DefaultLiveSpeechRecognitionService implements LiveSpeechRecognitionServic
   final StreamController<LiveSpeechSegment> _segmentController =
       StreamController<LiveSpeechSegment>.broadcast();
 
+  /// Configurable audio buffer threshold in bytes before submitting to STT.
+  ///
+  /// At 16 kHz, 16-bit Mono linear PCM (32,000 bytes/sec):
+  /// - 0 bytes: process immediately on each chunk (useful for unit tests or complete clips).
+  /// - 48,000 bytes: ~1.5 seconds of acoustic audio (responsive live speech chunks).
+  /// - 80,000 bytes: ~2.5 seconds of acoustic audio (standard utterance boundary).
+  final int bufferThresholdBytes;
+
+  /// Maximum volatile buffer size (160,000 bytes = 5.0 seconds at 16kHz 16-bit mono).
+  /// Prevents unbounded memory growth in volatile storage.
+  static const int maxBufferSize = 160000;
+
+  final List<int> _audioBuffer = [];
+  bool _isTranscribing = false;
   bool _isListening = false;
   bool _isDisposed = false;
   DateTime? _lastTranscriptionTime;
@@ -110,6 +125,7 @@ class DefaultLiveSpeechRecognitionService implements LiveSpeechRecognitionServic
 
   DefaultLiveSpeechRecognitionService({
     SpeechToTextService? sttService,
+    this.bufferThresholdBytes = 0,
   }) : _sttService = sttService ?? STTProviderFactory.getSpeechToTextService();
 
   @override
@@ -174,7 +190,7 @@ class DefaultLiveSpeechRecognitionService implements LiveSpeechRecognitionServic
     }
   }
 
-  /// Sends a raw audio buffer to the underlying [SpeechToTextService] for batch transcription.
+  /// Sends raw audio bytes or buffers them in volatile memory before batch transcription.
   @override
   Future<void> processAudioBytes(List<int> bytes) async {
     if (!_isListening || _isDisposed) return;
@@ -185,8 +201,51 @@ class DefaultLiveSpeechRecognitionService implements LiveSpeechRecognitionServic
         'Cannot transcribe empty audio buffer.',
       );
     }
+
+    if (bufferThresholdBytes <= 0) {
+      // Immediate mode: transcribe directly (preserves synchronous test fixtures)
+      await _transcribePcmBytes(bytes);
+      return;
+    }
+
+    // Buffered mode: accumulate into volatile memory
+    _audioBuffer.addAll(bytes);
+
+    // Enforce bounded buffer limit (max 5 seconds of audio = 160,000 bytes)
+    if (_audioBuffer.length > maxBufferSize) {
+      _audioBuffer.removeRange(0, _audioBuffer.length - maxBufferSize);
+    }
+
+    // Flush when buffer reaches configured threshold
+    if (_audioBuffer.length >= bufferThresholdBytes && !_isTranscribing) {
+      await flushAudioBuffer();
+    }
+  }
+
+  /// Flushes and transcribes the accumulated in-memory PCM audio buffer.
+  Future<void> flushAudioBuffer() async {
+    if (_audioBuffer.isEmpty || _isDisposed || _isTranscribing) return;
+    final pcmToTranscribe = List<int>.from(_audioBuffer);
+    _audioBuffer.clear();
+    await _transcribePcmBytes(pcmToTranscribe);
+  }
+
+  Future<void> _transcribePcmBytes(List<int> pcmBytes) async {
+    if (pcmBytes.isEmpty || _isDisposed) return;
+    _isTranscribing = true;
     try {
-      final input = AudioInput.bytes(bytes, label: 'Microphone Stream');
+      // Package raw PCM into standard 16kHz mono WAV container if not already WAV
+      final wavBytes = WavEncoder.isValidWavHeader(pcmBytes)
+          ? pcmBytes
+          : WavEncoder.encodePcmToWav(pcmBytes);
+
+      final durationMs = (pcmBytes.length / 32).round();
+      final input = AudioInput.bytes(
+        wavBytes,
+        label: 'Microphone Stream',
+        duration: Duration(milliseconds: durationMs),
+      );
+
       final lines = await _sttService.transcribeAudio(input);
       _lastTranscriptionTime = DateTime.now();
       _lastError = null;
@@ -206,12 +265,20 @@ class DefaultLiveSpeechRecognitionService implements LiveSpeechRecognitionServic
       _lastError = e.toString();
       _onError?.call(_lastError!);
       rethrow;
+    } finally {
+      _isTranscribing = false;
     }
   }
 
   @override
   Future<void> stopListening() async {
     _isListening = false;
+    // Flush any remaining buffered audio before stopping
+    if (_audioBuffer.isNotEmpty && !_isDisposed) {
+      try {
+        await flushAudioBuffer();
+      } catch (_) {}
+    }
   }
 
   @override
@@ -219,6 +286,7 @@ class DefaultLiveSpeechRecognitionService implements LiveSpeechRecognitionServic
     if (_isDisposed) return;
     _isDisposed = true;
     _isListening = false;
+    _audioBuffer.clear();
     await _segmentController.close();
   }
 }

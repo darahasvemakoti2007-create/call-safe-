@@ -76,11 +76,18 @@ class RemoteSpeechToTextService extends SpeechToTextService {
         'Content-Type': 'application/json',
       };
 
-      final body = jsonEncode({
+      final base64Audio = input.audioBytes != null ? base64Encode(input.audioBytes!) : null;
+
+      final payload = <String, dynamic>{
         'model': 'whisper-1',
         'label': input.label,
         'duration_seconds': input.duration?.inSeconds ?? 0,
-      });
+      };
+      if (base64Audio != null) {
+        payload['audio_base64'] = base64Audio;
+        payload['content_type'] = 'audio/wav';
+      }
+      final body = jsonEncode(payload);
 
       final responseBody = await httpClient
           .post(url: endpoint, headers: headers, body: body, timeout: timeout)
@@ -117,6 +124,18 @@ class RemoteSpeechToTextService extends SpeechToTextService {
     try {
       final decoded = jsonDecode(jsonString);
       if (decoded is Map<String, dynamic>) {
+        // Handle provider error envelope (e.g. rate limits, authentication failures)
+        if (decoded.containsKey('error')) {
+          final errorObj = decoded['error'];
+          final errorMsg = errorObj is Map
+              ? (errorObj['message'] ?? errorObj.toString())
+              : errorObj.toString();
+          throw SpeechToTextException(
+            SpeechToTextErrorType.transcriptionFailure,
+            'Speech recognition provider error: $errorMsg',
+          );
+        }
+
         // OpenAI Whisper JSON format: {"text": "..."}
         if (decoded.containsKey('text') && decoded['text'] is String) {
           final text = decoded['text'] as String;
@@ -152,6 +171,8 @@ class RemoteSpeechToTextService extends SpeechToTextService {
         }
       }
       throw const FormatException('Missing valid "text" or "lines" array in response.');
+    } on SpeechToTextException {
+      rethrow;
     } catch (e) {
       throw SpeechToTextException(
         SpeechToTextErrorType.transcriptionFailure,

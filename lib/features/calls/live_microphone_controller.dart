@@ -49,8 +49,8 @@ class LiveMicrophoneController extends ChangeNotifier {
     ScamDetectionEngine? detectionEngine,
   })  : _permissionHandler = permissionHandler ?? DefaultMicrophonePermissionHandler(),
         _audioCaptureService = audioCaptureService ?? DefaultMicrophoneAudioCaptureService(),
-        _speechRecognitionService =
-            speechRecognitionService ?? DefaultLiveSpeechRecognitionService(),
+        _speechRecognitionService = speechRecognitionService ??
+            DefaultLiveSpeechRecognitionService(bufferThresholdBytes: 48000),
         _detectionEngine = detectionEngine ?? DetectionProviderFactory.getDetectionEngine();
 
   // Getters
@@ -71,7 +71,8 @@ class LiveMicrophoneController extends ChangeNotifier {
   bool get isSttConfigured => _speechRecognitionService.isConfigured;
   String get sttProviderName => _speechRecognitionService.providerName;
   DateTime? get lastTranscriptionTime => _speechRecognitionService.lastTranscriptionTime;
-  bool get isLiveTranscriptionActive => isCapturing && isSttConfigured;
+  bool get isLiveTranscriptionActive =>
+      isCapturing && isSttConfigured && _speechRecognitionService.lastError == null;
 
   String get audioCaptureDetails =>
       '${_audioCaptureService.sampleRate}Hz • ${_audioCaptureService.channelCount == 1 ? "Mono" : "Stereo"} • ${_audioCaptureService.bitDepth}-bit';
@@ -185,7 +186,7 @@ class LiveMicrophoneController extends ChangeNotifier {
 
       // 3. Start live speech transcription
       await _speechRecognitionService.startListening(
-        onSegment: (segment) => processSpeechSegment(segment),
+        onSegment: (_) {},
         onError: (err) {
           _errorMessage = err;
           notifyListeners();
