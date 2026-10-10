@@ -144,6 +144,8 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
     final hasFinancial = types.contains(ScamSignalType.financialPressure);
     final hasIsolation = types.contains(ScamSignalType.isolation);
     final hasEmotional = types.contains(ScamSignalType.emotionalManipulation);
+    final hasRemote = types.contains(ScamSignalType.remoteAccessRequest);
+    final hasLink = types.contains(ScamSignalType.suspiciousLink);
 
     if (hasAuthority && hasUrgency) combinationBonuses += 10;
     if (hasAuthority && hasThreat) combinationBonuses += 10;
@@ -152,6 +154,10 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
     if (hasIsolation && hasThreat) combinationBonuses += 10;
     if (hasEmotional && hasFinancial) combinationBonuses += 10;
     if (hasAuthority && hasSensitiveInfo) combinationBonuses += 15;
+    if (hasThreat && hasFinancial) combinationBonuses += 10;
+    if (hasRemote && hasUrgency) combinationBonuses += 10;
+    if (hasRemote && (hasAuthority || hasThreat)) combinationBonuses += 15;
+    if (hasLink && hasFinancial) combinationBonuses += 10;
 
     score += combinationBonuses;
 
@@ -165,7 +171,7 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
     // Critical (85–100) is strictly reserved for coercive threats (arrest/account seizure),
     // direct credential solicitation (OTP/PIN/password), or remote device control.
     // Emotional distress or financial appeals without threats or credential theft cap at High (80).
-    if (!hasThreat && !hasSensitiveInfo && !types.contains(ScamSignalType.remoteAccessRequest)) {
+    if (!hasThreat && !hasSensitiveInfo && !hasRemote) {
       if (score >= 85) {
         score = 80;
       }
@@ -188,7 +194,7 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
     if (detectedSignals.isEmpty) {
       if (hasProtectiveContext) {
         explanations.add(
-          'Protective context identified: Caller explicitly advised never sharing passwords/OTPs and referenced official authorized channels.',
+          'Protective context identified: Message explicitly advised never sharing credentials/OTPs or referenced legitimate verification channels.',
         );
       } else {
         explanations.add(
@@ -233,12 +239,49 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'never ask for your pin',
       'never ask for your password',
       'never ask for your cvv',
+      'never ask for your code',
+      'never ask for your credentials',
+      'never share your otp',
+      'never share your pin',
+      'never share your password',
+      'never share your cvv',
+      'never share your',
+      'do not share your otp',
+      'do not share this otp',
+      'do not share this code',
+      'do not share your pin',
+      'do not share your password',
+      'do not share your credentials',
+      'never disclose',
+      'do not disclose',
+      'never give your otp',
+      'do not give your otp',
+      'never give your password',
+      'security tip',
+      'fraud awareness',
+      'stay vigilant',
+      'beware of fraudulent',
+      'beware of phishing',
+      'we will never ask',
+      'bank will never ask',
+      'officials will never ask',
+      'staff will never ask',
+      'team will never ask',
       'official bank number',
       'official banking app',
       'no payment or sensitive information is required',
+      'no payment required',
+      'no payment is required',
       'no payment',
       'no sensitive information',
       'reschedule your appointment',
+      'payment was successful',
+      'successful on',
+      'confirmation ref',
+      'thank you for your payment',
+      'available balance is',
+      'if you did not make this purchase',
+      'was charged',
     ];
 
     for (final pattern in protectivePatterns) {
@@ -248,20 +291,37 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
   }
 
   bool _detectAuthorityImpersonation(String text, bool hasProtectiveContext) {
-    if (hasProtectiveContext && !text.contains('police') && !text.contains('arrest')) {
+    if (hasProtectiveContext &&
+        !text.contains('police') &&
+        !text.contains('arrest') &&
+        !text.contains('cyber crime')) {
       return false;
     }
 
     const authorityPatterns = [
       "i'm calling from your bank",
       'calling from the bank',
+      'calling from your bank',
+      'bank security division',
+      'bank fraud department',
+      'fraud prevention',
+      'fraudulent charges',
       'police investigation',
       'police inspector',
       'law enforcement',
       'central bank',
       'court officer',
       'tax official',
+      'income tax department',
+      'tax department',
       'cbi officer',
+      'cyber crime',
+      'cyber cell',
+      'customs department',
+      'telecom department',
+      'microsoft technical support',
+      'technical support',
+      'it support',
     ];
 
     for (final pattern in authorityPatterns) {
@@ -275,16 +335,60 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'expires today',
       'within 10 minutes',
       'within minutes',
-      'right now',
+      'within 30 minutes',
+      'in 30 minutes',
       'immediately',
       'urgent',
+      'urgently',
       'act fast',
       'today only',
+      'time is running out',
+      'overdue',
+      'pay right now',
+      'send right now',
+      'transfer right now',
+      'share right now',
+      'tell me right now',
+      'install right now',
+      'call right now',
+      'reply right now',
+      'right now to prevent',
+      'right now or',
+      'right now before',
+      'right now so',
     ];
 
     for (final pattern in urgencyPatterns) {
       if (text.contains(pattern)) return true;
     }
+
+    // Bare "right now" triggers only if imperative action or coercive words are present
+    if (text.contains('right now')) {
+      const actionTriggers = [
+        'pay',
+        'send',
+        'transfer',
+        'tell',
+        'share',
+        'give',
+        'install',
+        'action',
+        'must',
+        'prevent',
+        'police',
+        'penalty',
+        'blocked',
+        'arrest',
+        'wire',
+        'disconnect',
+      ];
+      final isDescriptive = text.contains('i am') || text.contains("i'm");
+      final hasAction = actionTriggers.any((w) => text.contains(w));
+      if (hasAction || !isDescriptive) {
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -292,13 +396,26 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
     const threatPatterns = [
       'account will be blocked',
       'will be blocked',
+      'account will be suspended',
+      'will be suspended',
+      'power will be disconnected',
+      'disconnected in',
+      'service will be terminated',
       'police investigation',
       'arrest',
+      'arrest warrant',
+      'warrant has been issued',
+      'non-bailable',
       'serious case',
       'legal action',
+      'legal prosecution',
       'prove your identity',
       'held liable',
       'penalty',
+      'tax evasion',
+      'trojan virus',
+      'viruses on your computer',
+      'computer has been infected',
     ];
 
     for (final pattern in threatPatterns) {
@@ -311,27 +428,60 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
     List<String> callerLines,
     bool hasProtectiveContext,
   ) {
+    if (hasProtectiveContext) {
+      // In protective context, credential mentions are defensive guidance
+      return false;
+    }
+
     for (final line in callerLines) {
       final lower = line.toLowerCase();
 
-      // Guard against protective statements mentioning OTP/PIN
-      if (lower.contains('never ask') || lower.contains('no sensitive information')) {
+      // Guard against protective statements or negative advice
+      if (lower.contains('never ask') ||
+          lower.contains('never share') ||
+          lower.contains('do not share') ||
+          lower.contains('never disclose') ||
+          lower.contains('do not disclose') ||
+          lower.contains('never give') ||
+          lower.contains('do not give') ||
+          lower.contains('no sensitive information') ||
+          lower.contains('security tip') ||
+          lower.contains('stay vigilant') ||
+          lower.contains('beware of')) {
         continue;
       }
 
-      if ((lower.contains('tell me the otp') ||
-              lower.contains('share the otp') ||
-              lower.contains('provide the otp') ||
-              lower.contains('send your otp') ||
-              lower.contains('send the otp') ||
-              lower.contains('enter your otp') ||
-              lower.contains('otp you just received') ||
-              lower.contains('verification code') ||
-              lower.contains('tell me your pin') ||
-              lower.contains('share your pin') ||
-              lower.contains('cvv') ||
-              lower.contains('password')) &&
-          !hasProtectiveContext) {
+      // Action verbs requesting confidential credentials
+      final hasSolicitVerb = lower.contains('tell me') ||
+          lower.contains('share ') ||
+          lower.contains('provide ') ||
+          lower.contains('send ') ||
+          lower.contains('enter ') ||
+          lower.contains('read back') ||
+          lower.contains('read me') ||
+          lower.contains('give me') ||
+          lower.contains('disclose ');
+
+      final hasCredentialTerm = lower.contains('otp') ||
+          lower.contains('pin') ||
+          lower.contains('cvv') ||
+          lower.contains('password') ||
+          lower.contains('verification code') ||
+          lower.contains('recovery code') ||
+          lower.contains('security code') ||
+          lower.contains('auth code') ||
+          lower.contains('passcode');
+
+      if (hasSolicitVerb && hasCredentialTerm) {
+        return true;
+      }
+
+      // Explicit harvesting phrases
+      if (lower.contains('otp you just received') ||
+          lower.contains('tell me the otp') ||
+          lower.contains('tell me your pin') ||
+          lower.contains('secret pin') ||
+          lower.contains('tell me the code')) {
         return true;
       }
     }
@@ -340,7 +490,11 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
 
   bool _detectFinancialPressure(String text, bool hasProtectiveContext) {
     if (hasProtectiveContext &&
-        (text.contains('no payment') || text.contains('never ask'))) {
+        (text.contains('no payment') ||
+            text.contains('never ask') ||
+            text.contains('was charged') ||
+            text.contains('payment was successful') ||
+            text.contains('debited by'))) {
       return false;
     }
 
@@ -348,13 +502,25 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'transfer the requested money',
       'transfer the money',
       'transfer money',
+      'transfer funds',
+      'transfer the penalty',
       'send the money',
       'send money',
+      'send payment',
       'upi id',
       'upi payment',
       'wire transfer',
+      'wire funds',
       'pay immediately',
       'need money immediately',
+      'customs fee',
+      'unpaid fee',
+      'penalty fee',
+      'redelivery fee',
+      'safe custody account',
+      'safe account',
+      'deposit the funds',
+      'deposit money',
     ];
 
     for (final pattern in financialPatterns) {
@@ -373,11 +539,16 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       "don't tell my parents",
       'do not call my parents',
       "don't call my parents",
+      'do not tell anyone',
+      "don't tell anyone",
+      'tell no one',
       'stay on this call',
+      'stay on the line',
       'do not disconnect',
+      'do not hang up',
       "don't hang up",
       'keep this confidential',
-      'tell no one',
+      'keep this secret',
     ];
 
     for (final pattern in isolationPatterns) {
@@ -411,7 +582,13 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'install this app',
       'anydesk',
       'teamviewer',
+      'quicksupport',
+      'rustdesk',
+      'ultraviewer',
       'share your screen',
+      'screen share',
+      'remote desktop',
+      'remote control',
     ];
 
     for (final pattern in remotePatterns) {
@@ -421,25 +598,45 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
   }
 
   bool _detectSuspiciousLink(String text) {
-    const linkPatterns = [
+    // Explicit suspicious or phishing link patterns
+    const explicitLinkPatterns = [
       'click this link',
       'open this link',
       'payment link',
       'upi link',
       'tracking link',
-      'http://',
-      'https://',
       'bit.ly/',
       'tinyurl.com/',
-      'click here',
+      'is.gd/',
+      't.co/',
+      'goo.gl/',
       'tap the link',
-      'tap here',
-      'open link',
+      'click here to pay',
+      'tap here to pay',
+      'pay at http',
+      'pay at https',
+      'http://',
     ];
 
-    for (final pattern in linkPatterns) {
+    for (final pattern in explicitLinkPatterns) {
       if (text.contains(pattern)) return true;
     }
+
+    // Generic link combined with financial demand or coercive urgency
+    if (text.contains('https://') ||
+        text.contains('click here') ||
+        text.contains('tap here')) {
+      final hasSuspiciousContext = text.contains('fee') ||
+          text.contains('pay') ||
+          text.contains('urgent') ||
+          text.contains('blocked') ||
+          text.contains('suspend') ||
+          text.contains('redelivery');
+      if (hasSuspiciousContext) {
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -468,13 +665,17 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
         firstHalf.contains('investigation') ||
         firstHalf.contains('grandma') ||
         firstHalf.contains('accident') ||
-        firstHalf.contains('kyc');
+        firstHalf.contains('kyc') ||
+        firstHalf.contains('tax') ||
+        firstHalf.contains('support');
 
     final hasLaterAction = secondHalf.contains('otp') ||
         secondHalf.contains('money') ||
         secondHalf.contains('transfer') ||
         secondHalf.contains('upi') ||
-        secondHalf.contains('blocked');
+        secondHalf.contains('blocked') ||
+        secondHalf.contains('anydesk') ||
+        secondHalf.contains('code');
 
     return hasInitialSetup && hasLaterAction;
   }
