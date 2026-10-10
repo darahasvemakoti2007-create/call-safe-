@@ -167,6 +167,14 @@ class FamilyAlertService {
     String? notificationStatus,
     String? notificationMessage,
   }) async {
+    // Deduplication check: if an alert for this callSessionId and contact was already created, return existing
+    final existingAlert = _inMemoryAlerts
+        .where((a) => a.callSessionId == callSessionId && a.familyContactId == familyContactId)
+        .firstOrNull;
+    if (existingAlert != null) {
+      return existingAlert;
+    }
+
     final alertId = id ?? 'alert_${DateTime.now().millisecondsSinceEpoch}';
     final senior = victimName ?? 'Robert Jenkins (Father)';
     final caregiver = caregiverName ?? 'Sarah Jenkins (Daughter)';

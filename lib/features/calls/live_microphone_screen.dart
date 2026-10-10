@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../app/app_theme.dart';
 import '../../core/services/family_alert_service.dart';
+import '../../core/services/family_relationship_service.dart';
 import '../../core/widgets/glass_card.dart';
 import '../../core/widgets/primary_button.dart';
 import '../../core/widgets/risk_badge.dart';
 import '../../core/widgets/section_header.dart';
 import '../alerts/scam_warning_dialog.dart';
 import '../detection/microphone_permission_handler.dart';
+import '../detection/scam_signal.dart';
 import 'live_microphone_controller.dart';
 
 /// Screen managing real-time physical microphone audio analysis,
@@ -27,6 +29,7 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
   late final LiveMicrophoneController _controller;
   final TextEditingController _testTextController = TextEditingController();
   bool _showManualInput = false;
+  bool _isAlertingFamily = false;
 
   @override
   void initState() {
@@ -58,18 +61,53 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
       },
       onAlertFamily: () async {
         Navigator.of(context, rootNavigator: true).pop();
+        if (_isAlertingFamily) return;
+        _isAlertingFamily = true;
         try {
+          final rels = await FamilyRelationshipService.instance.getMyRelationships();
+          final activeRel = rels.where((r) => r.enabled).firstOrNull;
+          final caregiverId = activeRel?.caregiverUserId ?? 'default-caregiver';
+          final caregiverName = activeRel?.displayName ?? 'Sarah Jenkins (Daughter)';
+
           await FamilyAlertService.instance.createAlert(
             callSessionId: 'mic_session_${DateTime.now().millisecondsSinceEpoch}',
-            familyContactId: 'default-caregiver',
+            familyContactId: caregiverId,
+            caregiverName: caregiverName,
             riskScore: analysis.riskScore,
             scenarioType: 'Live Microphone Shield',
             riskLevel: analysis.riskLevel.label,
-            detectedSignals: analysis.detectedSignals.map((s) => s.title).toList(),
-            explanation: analysis.summary,
+            detectedSignals: (analysis.detectedSignals as List<ScamSignal>?)
+                    ?.map((s) => s.title)
+                    .toList() ??
+                const <String>[],
+            explanation: (analysis.explanations as List<String>?)?.isNotEmpty == true
+                ? (analysis.explanations as List<String>).join(' ')
+                : 'Scam risk detected during active phone call.',
             interventionStatus: 'Family alert requested from live mic shield',
           );
-        } catch (_) {}
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                backgroundColor: AppTheme.navySurfaceLight,
+                content: Text(
+                  'Family alert recorded locally for this call session.',
+                  style: TextStyle(color: AppTheme.textPrimary),
+                ),
+              ),
+            );
+          }
+        } catch (_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                backgroundColor: AppTheme.riskCritical,
+                content: Text('Failed to record family alert.'),
+              ),
+            );
+          }
+        } finally {
+          _isAlertingFamily = false;
+        }
       },
     );
   }

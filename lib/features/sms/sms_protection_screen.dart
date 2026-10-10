@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../app/app_theme.dart';
 import '../../core/services/family_alert_service.dart';
+import '../../core/services/family_relationship_service.dart';
 import '../../core/widgets/glass_card.dart';
 import '../../core/widgets/primary_button.dart';
 import '../../core/widgets/risk_badge.dart';
@@ -62,11 +63,38 @@ class _SmsProtectionScreenState extends State<SmsProtectionScreen> {
     }
   }
 
+  bool _isAlerting = false;
+  String? _lastAlertedFingerprint;
+
   Future<void> _alertFamily(SmsAnalysisResult result) async {
+    if (_isAlerting) return;
+    final fingerprint = '${result.rawMessage.hashCode}_${result.riskScore}';
+    if (_lastAlertedFingerprint == fingerprint) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: AppTheme.navySurfaceLight,
+            content: Text(
+              'An alert has already been recorded for this message.',
+              style: TextStyle(color: AppTheme.textPrimary),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    _isAlerting = true;
     try {
+      final rels = await FamilyRelationshipService.instance.getMyRelationships();
+      final activeRel = rels.where((r) => r.enabled).firstOrNull;
+      final caregiverId = activeRel?.caregiverUserId ?? 'default-caregiver';
+      final caregiverName = activeRel?.displayName ?? 'Sarah Jenkins (Daughter)';
+
       await FamilyAlertService.instance.createAlert(
         callSessionId: 'sms_alert_${DateTime.now().millisecondsSinceEpoch}',
-        familyContactId: 'default-caregiver',
+        familyContactId: caregiverId,
+        caregiverName: caregiverName,
         riskScore: result.riskScore,
         scenarioType: 'Suspicious SMS Message',
         riskLevel: result.riskLevel.label,
@@ -74,6 +102,8 @@ class _SmsProtectionScreenState extends State<SmsProtectionScreen> {
         explanation: result.analysis.summary,
         interventionStatus: 'Family notified regarding suspicious text message',
       );
+      _lastAlertedFingerprint = fingerprint;
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -85,7 +115,18 @@ class _SmsProtectionScreenState extends State<SmsProtectionScreen> {
           ),
         );
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: AppTheme.riskCritical,
+            content: Text('Failed to record family alert.'),
+          ),
+        );
+      }
+    } finally {
+      _isAlerting = false;
+    }
   }
 
   @override
