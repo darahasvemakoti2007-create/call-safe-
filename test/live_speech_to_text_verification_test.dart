@@ -464,5 +464,55 @@ void main() {
       await controller.stopListening();
       controller.dispose();
     });
+
+    test('12. Harmless evaluated speech persists to CallHistoryRepository as Safe assessment', () async {
+      final harmlessStt = RecordingSpeechToTextService(
+        returnLines: [
+          const ConversationLine(
+            speaker: Speaker.caller,
+            text: 'Good morning Eleanor, just checking in to see how your garden is doing today.',
+          ),
+        ],
+      );
+
+      final liveSttService = DefaultLiveSpeechRecognitionService(
+        sttService: harmlessStt,
+        bufferThresholdBytes: 0,
+      );
+
+      final controller = LiveMicrophoneController(
+        speechRecognitionService: liveSttService,
+        detectionEngine: const MockScamDetectionEngine(),
+        permissionHandler: MockMicrophonePermissionHandler(status: MicrophonePermissionStatus.granted),
+      );
+
+      await controller.initialize();
+      await controller.startListening();
+
+      final countBefore = CallHistoryRepository.instance.records.length;
+
+      // Ingest harmless speech
+      await liveSttService.processAudioBytes(Uint8List(80));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(controller.transcriptSegments, isNotEmpty);
+      expect(controller.currentAnalysis.riskScore, 0);
+      expect(controller.currentAnalysis.riskLevel, RiskLevel.safe);
+
+      // Stop listening -> triggers logAssessmentToHistory()
+      await controller.stopListening();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final historyAfter = CallHistoryRepository.instance.records;
+      expect(historyAfter.length, countBefore + 1);
+
+      final saved = historyAfter.first;
+      expect(saved.isSimulated, isFalse);
+      expect(saved.riskScore, 0);
+      expect(saved.riskLevel, RiskLevel.safe);
+      expect(saved.recommendedAction, contains('No protective action needed'));
+
+      controller.dispose();
+    });
   });
 }

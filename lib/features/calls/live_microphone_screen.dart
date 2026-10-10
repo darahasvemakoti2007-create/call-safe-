@@ -50,12 +50,14 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
       analysis: analysis,
       onEndCall: () {
         _controller.stopListening();
-        Navigator.of(context).pop();
+        Navigator.of(context, rootNavigator: true).pop();
       },
       onImSafe: () {
         _controller.dismissWarningModal();
+        Navigator.of(context, rootNavigator: true).pop();
       },
       onAlertFamily: () async {
+        Navigator.of(context, rootNavigator: true).pop();
         try {
           await FamilyAlertService.instance.createAlert(
             callSessionId: 'mic_session_${DateTime.now().millisecondsSinceEpoch}',

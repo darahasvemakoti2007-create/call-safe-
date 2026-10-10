@@ -20,22 +20,24 @@ Modern Android operating system releases (Android 9 Pie through Android 15/API 3
 3. **Hardware Baseband Isolation:**
    - On Android devices, the cellular modem (baseband processor) routes voice call audio directly to telephony audio hardware paths. Third-party apps without system privilege cannot snoop on cellular voice calls.
 
-### GuardCall's Approach: Honest Demonstration
-- GuardCall **does NOT claim** live cellular call interception or recording.
-- GuardCall **does NOT request** dangerous call-recording permissions (`RECORD_AUDIO`, `READ_PHONE_STATE`, `PROCESS_OUTGOING_CALLS`) in its main production manifest.
-- The prototype demonstrates real-time conversational scam analysis through controlled, structured voice audio scenarios in the Demo Center.
+### GuardCall's Approach: Honest Demonstration & Opt-In Speakerphone Shield
+- GuardCall **does NOT claim** cellular telephony call interception or baseband wiretapping.
+- GuardCall requires explicit runtime consent for `android.permission.RECORD_AUDIO`: acoustic monitoring operates via the ambient room microphone when the user explicitly taps "Start Microphone Shield" (e.g. placing a call on speakerphone).
+- GuardCall **does NOT request** call-spying permissions (`READ_PHONE_STATE`, `PROCESS_OUTGOING_CALLS`, `READ_CALL_LOG`, `CAPTURE_AUDIO_OUTPUT`).
 
 ---
 
 ## 3. Production vs. Prototype Manifest Audit
 
 ### Production Manifest (`android/app/src/main/AndroidManifest.xml`)
-- **Dangerous / Runtime Permissions Declared:** Exactly **ZERO**.
-- No `android.permission.RECORD_AUDIO`.
-- No `android.permission.READ_PHONE_STATE`.
-- No `android.permission.PROCESS_OUTGOING_CALLS`.
-- No `android.permission.READ_CALL_LOG`.
-- No `android.permission.INTERNET` in main manifest (only in debug manifest for Flutter development tools).
+- Declared permissions:
+  - `android.permission.RECORD_AUDIO`: User-consented runtime permission for Microphone Shield. Only active when explicitly started by user.
+  - `android.permission.INTERNET`: For secure HTTPS edge function communication (when cloud ASR backend is configured).
+- Zero call-spying permissions:
+  - No `android.permission.READ_PHONE_STATE`.
+  - No `android.permission.PROCESS_OUTGOING_CALLS`.
+  - No `android.permission.READ_CALL_LOG`.
+  - No `android.permission.CAPTURE_AUDIO_OUTPUT`.
 
 ### Debug Manifest (`android/app/src/debug/AndroidManifest.xml`)
 - Only `android.permission.INTERNET` is included, strictly required by Flutter tooling for Dart VM service, observatory, and hot reload during local development.

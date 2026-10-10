@@ -220,7 +220,7 @@ class LiveMicrophoneController extends ChangeNotifier {
     notifyListeners();
 
     // Log assessment if genuine speech was evaluated
-    if (_transcriptSegments.isNotEmpty && _currentAnalysis.riskScore > 0) {
+    if (_transcriptSegments.isNotEmpty) {
       await logAssessmentToHistory();
     }
   }
