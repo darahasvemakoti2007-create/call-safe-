@@ -393,8 +393,11 @@ class _SmsProtectionScreenState extends State<SmsProtectionScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               RiskBadge(
                 level: result.riskLevel,
@@ -405,7 +408,7 @@ class _SmsProtectionScreenState extends State<SmsProtectionScreen> {
                 style: TextStyle(
                   color: riskColor,
                   fontWeight: FontWeight.w800,
-                  fontSize: 15,
+                  fontSize: 14,
                 ),
               ),
             ],
