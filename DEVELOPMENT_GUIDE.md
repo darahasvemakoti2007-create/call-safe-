@@ -54,4 +54,25 @@ flutter analyze
 ## 4. Current Prototype Limitations
 - Supabase deployment remains postponed.
 - Outward notifications are simulated locally in-memory.
-- Live cellular call audio recording is restricted by Android OS; controlled demo scenarios provide safe demonstration.
+- Live cellular call audio recording is restricted by Android OS; controlled demo scenarios and speakerphone microphone mode provide safe demonstration.
+
+---
+
+## 5. Live Microphone Audio Shield (Step 5 Foundation)
+
+### 1. Architecture & Capabilities
+- **Consent-Based Capture:** Microphone activates exclusively when the user explicitly taps **"Start Microphone Shield"** and halts immediately on **"Stop"**.
+- **Ambient & Speakerphone Scope:** Evaluates acoustic speech captured by the physical device microphone (suitable for in-person conversations or calls placed on speakerphone).
+- **Android Telephony Limitations:** Standard Android security sandboxes incoming cellular telephony streams at the hardware/baseband HAL level. GuardCall operates within honest platform boundaries and does not claim background cellular call wiretapping.
+- **Zero-Audio Persistence:** Audio buffers are processed ephemerally in volatile memory for transcription and immediately scrubbed. No raw audio files are written to disk.
+
+### 2. Speech-to-Text Setup Requirements
+To enable live cloud speech recognition:
+1. **Production (Supabase Edge Function):**
+   - Deploy `guardcall-stt` Edge Function in your Supabase project.
+   - Set `STT_BACKEND=edge_function` in environment.
+2. **Local Developer Direct STT:**
+   - Configure `STT_BACKEND=direct_dev` and `STT_API_KEY=<provider_key>` in `.env`.
+3. **Offline / Test Automation Default:**
+   - Defaults safely to `STT_BACKEND=mock` or programmatic test feeds without external network calls.
+

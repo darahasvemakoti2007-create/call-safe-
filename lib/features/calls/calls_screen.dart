@@ -4,6 +4,7 @@ import '../../core/widgets/glass_card.dart';
 import '../../core/widgets/primary_button.dart';
 import '../../core/widgets/section_header.dart';
 import '../demo/demo_center_screen.dart';
+import 'live_microphone_screen.dart';
 
 /// The active call monitoring view.
 ///
@@ -88,9 +89,34 @@ class CallsScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 28),
                       PrimaryButton(
-                        text: 'Open Demo Center',
-                        icon: Icons.play_circle_outline_rounded,
-                        onPressed: () => _openDemoCenter(context),
+                        key: const Key('open_live_mic_shield_button'),
+                        text: 'Start Microphone Shield',
+                        icon: Icons.mic_rounded,
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const LiveMicrophoneScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: OutlinedButton.icon(
+                          key: const Key('open_demo_center_button'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.skyAccent,
+                            side: const BorderSide(color: AppTheme.navyBorder),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          icon: const Icon(Icons.play_circle_outline_rounded, size: 20),
+                          label: const Text('Open Demo Center', style: TextStyle(fontWeight: FontWeight.w600)),
+                          onPressed: () => _openDemoCenter(context),
+                        ),
                       ),
                     ],
                   ),
