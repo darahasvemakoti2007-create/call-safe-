@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'package:flutter/services.dart';
 
 /// Lifecycle states of device microphone audio capture.
 enum AudioCaptureState {
@@ -95,8 +98,11 @@ abstract class MicrophoneAudioCaptureService {
 }
 
 /// Default implementation of [MicrophoneAudioCaptureService] managing
-/// microphone lifecycle and streaming.
+/// microphone lifecycle and streaming via native Android AudioRecord or fallback buffer.
 class DefaultMicrophoneAudioCaptureService implements MicrophoneAudioCaptureService {
+  final MethodChannel _methodChannel;
+  final EventChannel _eventChannel;
+
   AudioCaptureState _state = AudioCaptureState.idle;
   final StreamController<AudioCaptureState> _stateController =
       StreamController<AudioCaptureState>.broadcast();
@@ -105,8 +111,16 @@ class DefaultMicrophoneAudioCaptureService implements MicrophoneAudioCaptureServ
   final StreamController<double> _audioLevelController =
       StreamController<double>.broadcast();
 
+  StreamSubscription<dynamic>? _nativeAudioSubscription;
   Timer? _levelTimer;
   bool _isReleased = false;
+  bool _isHardwareBound = false;
+
+  DefaultMicrophoneAudioCaptureService({
+    MethodChannel? methodChannel,
+    EventChannel? eventChannel,
+  })  : _methodChannel = methodChannel ?? const MethodChannel('guardcall/audio_capture'),
+        _eventChannel = eventChannel ?? const EventChannel('guardcall/audio_stream');
 
   @override
   int get sampleRate => 16000;
@@ -121,7 +135,7 @@ class DefaultMicrophoneAudioCaptureService implements MicrophoneAudioCaptureServ
   String get encoding => 'audio/pcm;rate=16000;channels=1';
 
   @override
-  bool get isHardwareBound => false;
+  bool get isHardwareBound => _isHardwareBound;
 
   @override
   AudioCaptureState get state => _state;
@@ -154,13 +168,76 @@ class DefaultMicrophoneAudioCaptureService implements MicrophoneAudioCaptureServ
     if (_state == AudioCaptureState.capturing) return;
 
     _setState(AudioCaptureState.starting);
-    // Simulate brief hardware buffer initialization
+
+    bool nativeStarted = false;
+    try {
+      final isAvailable = await _methodChannel.invokeMethod<bool>('isAvailable');
+      if (isAvailable == true) {
+        // Subscribe to native PCM EventChannel stream
+        await _nativeAudioSubscription?.cancel();
+        _nativeAudioSubscription = _eventChannel.receiveBroadcastStream().listen(
+          (dynamic chunk) {
+            if (chunk is List<int>) {
+              feedAudioBytes(chunk);
+            } else if (chunk is List) {
+              feedAudioBytes(List<int>.from(chunk));
+            }
+          },
+          onError: (dynamic error) {
+            _handleNativeCaptureError(error);
+          },
+          onDone: () {
+            _isHardwareBound = false;
+          },
+          cancelOnError: false,
+        );
+
+        final startResult = await _methodChannel.invokeMethod<bool>('startCapture');
+        nativeStarted = startResult == true;
+      }
+    } on PlatformException catch (e) {
+      await _nativeAudioSubscription?.cancel();
+      _nativeAudioSubscription = null;
+      _isHardwareBound = false;
+      _setState(AudioCaptureState.error);
+      if (e.code == 'PERMISSION_DENIED') {
+        throw const AudioCaptureException(
+          AudioCaptureErrorType.permissionDenied,
+          'Microphone permission is required to capture audio.',
+        );
+      } else if (e.code == 'INITIALIZATION_FAILED') {
+        throw AudioCaptureException(
+          AudioCaptureErrorType.initializationFailed,
+          'Failed to initialize native audio hardware: ${e.message}',
+        );
+      } else {
+        throw AudioCaptureException(
+          AudioCaptureErrorType.hardwareUnavailable,
+          'Native audio capture error: ${e.message}',
+        );
+      }
+    } on MissingPluginException {
+      // Platform channel not available in current runtime (headless tests, web, or non-Android environment)
+      nativeStarted = false;
+    } catch (_) {
+      nativeStarted = false;
+    }
+
+    if (nativeStarted) {
+      _isHardwareBound = true;
+      _setState(AudioCaptureState.capturing);
+      return;
+    }
+
+    // Fallback mode for tests or environments without native AudioRecord:
+    // brief delay simulating hardware buffer initialization
     await Future<void>.delayed(const Duration(milliseconds: 50));
     if (_isReleased) return;
 
+    _isHardwareBound = false;
     _setState(AudioCaptureState.capturing);
 
-    // Emit gentle pulse amplitude updates to drive UI visualizer
+    // Emit gentle pulse amplitude updates to drive UI visualizer in fallback mode
     _levelTimer?.cancel();
     _levelTimer = Timer.periodic(const Duration(milliseconds: 150), (timer) {
       if (_state != AudioCaptureState.capturing || _isReleased) {
@@ -179,6 +256,19 @@ class DefaultMicrophoneAudioCaptureService implements MicrophoneAudioCaptureServ
   Future<void> stopCapture() async {
     _levelTimer?.cancel();
     _levelTimer = null;
+
+    if (_nativeAudioSubscription != null) {
+      await _nativeAudioSubscription?.cancel();
+      _nativeAudioSubscription = null;
+    }
+
+    if (_isHardwareBound) {
+      try {
+        await _methodChannel.invokeMethod<bool>('stopCapture');
+      } catch (_) {}
+      _isHardwareBound = false;
+    }
+
     if (!_audioLevelController.isClosed) {
       _audioLevelController.add(0.0);
     }
@@ -189,6 +279,19 @@ class DefaultMicrophoneAudioCaptureService implements MicrophoneAudioCaptureServ
   Future<void> interrupt() async {
     _levelTimer?.cancel();
     _levelTimer = null;
+
+    if (_nativeAudioSubscription != null) {
+      await _nativeAudioSubscription?.cancel();
+      _nativeAudioSubscription = null;
+    }
+
+    if (_isHardwareBound) {
+      try {
+        await _methodChannel.invokeMethod<bool>('stopCapture');
+      } catch (_) {}
+      _isHardwareBound = false;
+    }
+
     if (!_audioLevelController.isClosed) {
       _audioLevelController.add(0.0);
     }
@@ -201,6 +304,19 @@ class DefaultMicrophoneAudioCaptureService implements MicrophoneAudioCaptureServ
     _isReleased = true;
     _levelTimer?.cancel();
     _levelTimer = null;
+
+    if (_nativeAudioSubscription != null) {
+      await _nativeAudioSubscription?.cancel();
+      _nativeAudioSubscription = null;
+    }
+
+    if (_isHardwareBound) {
+      try {
+        await _methodChannel.invokeMethod<bool>('stopCapture');
+      } catch (_) {}
+      _isHardwareBound = false;
+    }
+
     _setState(AudioCaptureState.idle);
 
     await _stateController.close();
@@ -215,6 +331,40 @@ class DefaultMicrophoneAudioCaptureService implements MicrophoneAudioCaptureServ
     if (_isReleased || _state != AudioCaptureState.capturing) return;
     if (!_audioDataController.isClosed) {
       _audioDataController.add(bytes);
+    }
+    // If real native audio is streaming, calculate and emit actual RMS amplitude
+    if (_isHardwareBound && !_audioLevelController.isClosed && bytes.length >= 2) {
+      final level = calculateRmsLevel(bytes);
+      _audioLevelController.add(level);
+    }
+  }
+
+  /// Calculates normalized Root-Mean-Square (RMS) amplitude level [0.0 to 1.0]
+  /// from 16-bit linear PCM byte samples.
+  static double calculateRmsLevel(List<int> bytes) {
+    if (bytes.length < 2) return 0.0;
+    final byteData = bytes is Uint8List
+        ? ByteData.sublistView(bytes)
+        : ByteData.sublistView(Uint8List.fromList(bytes));
+
+    double sumSquares = 0.0;
+    final sampleCount = bytes.length ~/ 2;
+    for (int i = 0; i < sampleCount; i++) {
+      final sample = byteData.getInt16(i * 2, Endian.little);
+      final normalized = sample / 32768.0;
+      sumSquares += normalized * normalized;
+    }
+    final rms = math.sqrt(sumSquares / sampleCount);
+    // Scale RMS by 2.5 to map typical speech dynamics (0.02 - 0.40) to responsive visual levels [0.0 - 1.0]
+    return (rms * 2.5).clamp(0.0, 1.0);
+  }
+
+  void _handleNativeCaptureError(dynamic error) {
+    if (_isReleased) return;
+    _isHardwareBound = false;
+    _setState(AudioCaptureState.interrupted);
+    if (!_audioLevelController.isClosed) {
+      _audioLevelController.add(0.0);
     }
   }
 }

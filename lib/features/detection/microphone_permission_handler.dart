@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 
 /// Status of the device microphone permission.
 enum MicrophonePermissionStatus {
@@ -29,28 +30,62 @@ abstract class MicrophonePermissionHandler {
 
 /// Default implementation handling microphone permissions for GuardCall.
 ///
-/// In standard Flutter environments without external native permission plugins,
-/// this handler manages lifecycle state and platform permission compliance.
+/// Communicates with native platform channels on Android and maintains
+/// graceful fallback state in automated test and desktop environments.
 class DefaultMicrophonePermissionHandler implements MicrophonePermissionHandler {
+  final MethodChannel _channel;
   MicrophonePermissionStatus _currentStatus = MicrophonePermissionStatus.notDetermined;
 
   DefaultMicrophonePermissionHandler({
     MicrophonePermissionStatus initialStatus = MicrophonePermissionStatus.notDetermined,
-  }) : _currentStatus = initialStatus;
+    MethodChannel? channel,
+  })  : _currentStatus = initialStatus,
+        _channel = channel ?? const MethodChannel('guardcall/audio_capture');
 
   @override
   Future<MicrophonePermissionStatus> checkPermission() async {
+    try {
+      final result = await _channel.invokeMethod<String>('checkPermission');
+      if (result != null) {
+        _currentStatus = _parseStatus(result);
+        return _currentStatus;
+      }
+    } catch (_) {
+      // Fallback to local state if native platform channel is not active
+    }
     return _currentStatus;
   }
 
   @override
   Future<MicrophonePermissionStatus> requestPermission() async {
+    try {
+      final result = await _channel.invokeMethod<String>('requestPermission');
+      if (result != null) {
+        _currentStatus = _parseStatus(result);
+        return _currentStatus;
+      }
+    } catch (_) {
+      // Fallback
+    }
     if (_currentStatus == MicrophonePermissionStatus.permanentlyDenied) {
       return MicrophonePermissionStatus.permanentlyDenied;
     }
-    // Simulate user granting permission when prompted
+    // Simulate user granting permission when prompted in fallback environment
     _currentStatus = MicrophonePermissionStatus.granted;
     return _currentStatus;
+  }
+
+  static MicrophonePermissionStatus _parseStatus(String str) {
+    switch (str) {
+      case 'granted':
+        return MicrophonePermissionStatus.granted;
+      case 'denied':
+        return MicrophonePermissionStatus.denied;
+      case 'permanentlyDenied':
+        return MicrophonePermissionStatus.permanentlyDenied;
+      default:
+        return MicrophonePermissionStatus.notDetermined;
+    }
   }
 
   /// Manually sets the status (useful for setting state from native callbacks or tests).

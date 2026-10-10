@@ -132,3 +132,50 @@ When testing on a real Android device or emulator:
 - Standard Android security prohibits third-party user applications from recording or intercepting cellular telephone call audio directly (`VOICE_CALL` audio source is restricted to system dialers).
 - GuardCall operates honestly in ambient/speakerphone mode and does not claim background cellular wiretapping.
 
+---
+
+## 7. Native Android AudioRecord Capture (Step 7)
+
+### 1. Native Platform Channel Architecture
+To achieve optimal latency and 100% compliant audio capture without third-party plugin version conflicts, GuardCall implements a direct Android SDK `AudioRecord` platform channel:
+
+- **MethodChannel (`guardcall/audio_capture`):**
+  - `isAvailable`: Verifies physical microphone hardware via `PackageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE)`.
+  - `checkPermission`: Checks `ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)`.
+  - `requestPermission`: Requests runtime permission via `ActivityCompat.requestPermissions` and returns `'granted'`, `'denied'`, or `'permanentlyDenied'`.
+  - `getAudioFormat`: Returns map with `sampleRate: 16000`, `channelCount: 1`, `bitDepth: 16`, `encoding: "audio/pcm;rate=16000;channels=1"`.
+  - `startCapture`: Initializes `AudioRecord(MediaRecorder.AudioSource.MIC, 16000, CHANNEL_IN_MONO, ENCODING_PCM_16BIT, bufferSize)` and spawns background recording thread `GuardCallNativeAudioRecorder`.
+  - `stopCapture`: Gracefully interrupts recording thread, stops and releases `AudioRecord` native hardware driver.
+  - `isCapturing`: Returns atomic capture status.
+
+- **EventChannel (`guardcall/audio_stream`):**
+  - Streams raw `ByteArray` chunks directly from native `AudioRecord.read` loop into Flutter's Dart engine over `EventSink.success(chunk)`.
+  - Posts errors (`EventSink.error`) on driver error or read failure.
+  - Releases resources in `onDestroy()` and stream cancellation.
+
+### 2. Dart Capture Pipeline Integration
+- **`DefaultMicrophoneAudioCaptureService`:**
+  - Manages `MethodChannel` and `EventChannel` lifecycle.
+  - Dynamically sets `isHardwareBound = true` when native hardware recording is active and usable.
+  - In automated test and non-Android environments, falls back gracefully to in-memory mode (`isHardwareBound = false`).
+  - Converts incoming 16-bit linear PCM byte buffers into normalized Root-Mean-Square (RMS) amplitude levels `[0.0, 1.0]` to drive the visualizer with real acoustic dynamics.
+  - Forwards raw PCM byte chunks directly into `audioDataStream` and `LiveSpeechRecognitionService.processAudioBytes`.
+
+### 3. Verification & Privacy Controls
+- **Zero File Persistence:** Audio bytes are never written to disk, SQLite, shared preferences, or device storage.
+- **Truthful Status:** `LiveMicrophoneController` inspects `isHardwareBound` to update diagnostics (`Capturing Live Audio (16000Hz • Mono • 16-bit)` vs `Active Capture (16000Hz • Mono • 16-bit, Volatile Buffer)`).
+- **Physical Device Testing Steps:**
+  1. Connect Android device or launch Android emulator:
+     ```bash
+     flutter devices
+     flutter run -d <device-id>
+     ```
+  2. Navigate to **Calls** -> **Start Microphone Shield**.
+  3. Grant `RECORD_AUDIO` permission in the system dialog.
+  4. Verify the **Pipeline Diagnostics** card reflects:
+     - `Microphone Permission: GRANTED`
+     - `Audio Capture: Capturing Live Audio (16000Hz • Mono • 16-bit)`
+  5. Speak into the microphone; observe real-time waveform reacting to vocal amplitude.
+  6. Tap **Stop Shield**; verify `AudioRecord` stops and native audio resources are released immediately.
+
+

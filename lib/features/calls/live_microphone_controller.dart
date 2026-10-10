@@ -212,6 +212,7 @@ class LiveMicrophoneController extends ChangeNotifier {
 
     await _speechRecognitionService.stopListening();
     await _audioCaptureService.stopCapture();
+    _captureState = _audioCaptureService.state;
 
     _interimSegment = null;
     _statusMessage = 'Microphone stopped. Capture stream closed.';
