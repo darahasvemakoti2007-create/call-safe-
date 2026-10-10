@@ -2,13 +2,18 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:guard_call/app/app_theme.dart';
 import 'package:guard_call/core/config/app_config.dart';
 import 'package:guard_call/core/services/ai_http_client.dart';
+import 'package:guard_call/core/services/guardcall_edge_function_client.dart';
 import 'package:guard_call/core/widgets/risk_badge.dart';
 import 'package:guard_call/features/calls/live_microphone_controller.dart';
+import 'package:guard_call/features/calls/live_microphone_screen.dart';
 import 'package:guard_call/features/demo/demo_scenario.dart';
 import 'package:guard_call/features/detection/audio_input.dart';
+import 'package:guard_call/features/detection/edge_function_speech_to_text_service.dart';
 import 'package:guard_call/features/detection/live_speech_recognition_service.dart';
 import 'package:guard_call/features/detection/microphone_audio_capture_service.dart';
 import 'package:guard_call/features/detection/microphone_permission_handler.dart';
@@ -17,6 +22,7 @@ import 'package:guard_call/features/detection/remote_speech_to_text_service.dart
 import 'package:guard_call/features/detection/speech_to_text_service.dart';
 import 'package:guard_call/features/detection/wav_encoder.dart';
 import 'package:guard_call/features/history/call_history_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class StubAIHttpClient implements AIHttpClient {
   final Future<String> Function({
@@ -60,6 +66,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    CallHistoryRepository.instance.resetForTesting();
     AppConfig.current = AppConfig.offlineDefault();
   });
 
@@ -513,6 +521,318 @@ void main() {
       expect(saved.recommendedAction, contains('No protective action needed'));
 
       controller.dispose();
+    });
+  });
+
+  group('Step 11 — Edge Function STT Protocol & Authentication Tests', () {
+    test('13. EdgeFunctionSpeechToTextService constructs valid authenticated request with base64 audio and parses lines', () async {
+      String? sentAuthHeader;
+      String? sentApiKey;
+      String? sentBody;
+
+      final stubClient = StubAIHttpClient(
+        ({required url, required headers, required body, timeout = const Duration(seconds: 10)}) async {
+          sentAuthHeader = headers['Authorization'];
+          sentApiKey = headers['apikey'];
+          sentBody = body;
+          return jsonEncode({
+            'lines': [
+              {'speaker': 'caller', 'text': 'This is bank security department, verify your card pin.'},
+            ],
+          });
+        },
+      );
+
+      final edgeClient = GuardCallEdgeFunctionClient(
+        supabaseUrl: 'https://test-project.supabase.co',
+        supabaseAnonKey: 'test-anon-key-123',
+        httpClient: stubClient,
+        authTokenProvider: () => 'valid-mock-jwt-token-xyz',
+      );
+
+      final service = EdgeFunctionSpeechToTextService(edgeClient: edgeClient);
+
+      final pcmBytes = Uint8List(1600);
+      final wavBytes = WavEncoder.encodePcmToWav(pcmBytes);
+      final input = AudioInput.bytes(wavBytes, label: 'mic_chunk.wav');
+
+      final lines = await service.transcribeAudio(input);
+
+      expect(lines.length, 1);
+      expect(lines.first.speaker, Speaker.caller);
+      expect(lines.first.text, 'This is bank security department, verify your card pin.');
+
+      expect(sentAuthHeader, 'Bearer valid-mock-jwt-token-xyz');
+      expect(sentApiKey, 'test-anon-key-123');
+      expect(sentBody, isNotNull);
+      final decoded = jsonDecode(sentBody!) as Map<String, dynamic>;
+      expect(decoded['audio_base64'], isNotNull);
+      expect(decoded['content_type'], 'audio/wav');
+    });
+
+    test('14. EdgeFunctionSpeechToTextService enforces mandatory JWT authentication (throws when unauthenticated)', () async {
+      final edgeClient = GuardCallEdgeFunctionClient(
+        supabaseUrl: 'https://test-project.supabase.co',
+        supabaseAnonKey: 'test-anon-key-123',
+        authTokenProvider: () => null, // Unauthenticated!
+      );
+
+      final service = EdgeFunctionSpeechToTextService(edgeClient: edgeClient);
+      final input = AudioInput.bytes(WavEncoder.encodePcmToWav(Uint8List(200)));
+
+      expect(
+        () => service.transcribeAudio(input),
+        throwsA(
+          isA<SpeechToTextException>().having(
+            (e) => e.message,
+            'message',
+            contains('Authentication required'),
+          ),
+        ),
+      );
+    });
+
+    test('15. EdgeFunctionSpeechToTextService throws on missing or invalid Supabase URL', () async {
+      final edgeClient = GuardCallEdgeFunctionClient(
+        supabaseUrl: '',
+        supabaseAnonKey: 'test-anon-key',
+        authTokenProvider: () => 'jwt-token',
+      );
+
+      final service = EdgeFunctionSpeechToTextService(edgeClient: edgeClient);
+      final input = AudioInput.bytes(WavEncoder.encodePcmToWav(Uint8List(200)));
+
+      expect(
+        () => service.transcribeAudio(input),
+        throwsA(
+          isA<SpeechToTextException>().having(
+            (e) => e.message,
+            'message',
+            contains('Supabase URL is not configured'),
+          ),
+        ),
+      );
+    });
+
+    test('16. Empty provider transcript (silence/noise) returns empty list without spurious segments', () async {
+      final stubClient = StubAIHttpClient(
+        ({required url, required headers, required body, timeout = const Duration(seconds: 10)}) async {
+          return jsonEncode({'text': '   '});
+        },
+      );
+
+      final service = RemoteSpeechToTextService(
+        apiKey: 'test-key',
+        httpClient: stubClient,
+      );
+
+      final input = AudioInput.bytes(WavEncoder.encodePcmToWav(Uint8List(200)));
+      final lines = await service.transcribeAudio(input);
+
+      expect(lines, isEmpty);
+    });
+
+    test('17. Malformed provider response throws SpeechToTextException with transcriptionFailure', () async {
+      final stubClient = StubAIHttpClient(
+        ({required url, required headers, required body, timeout = const Duration(seconds: 10)}) async {
+          return jsonEncode({'invalid_envelope': true});
+        },
+      );
+
+      final service = RemoteSpeechToTextService(
+        apiKey: 'test-key',
+        httpClient: stubClient,
+      );
+
+      final input = AudioInput.bytes(WavEncoder.encodePcmToWav(Uint8List(200)));
+
+      expect(
+        () => service.transcribeAudio(input),
+        throwsA(
+          isA<SpeechToTextException>().having(
+            (e) => e.errorType,
+            'errorType',
+            SpeechToTextErrorType.transcriptionFailure,
+          ),
+        ),
+      );
+    });
+  });
+
+  group('Step 11 — False "Safe" Prevention & Reliability Verification Tests', () {
+    test('18. Transcription failure prevents false "Safe" classification and displays explicit error status', () async {
+      final failingStt = RecordingSpeechToTextService(
+        pendingError: const SpeechToTextException(
+          SpeechToTextErrorType.transcriptionFailure,
+          'Network socket refused by STT provider',
+        ),
+      );
+
+      final liveSttService = DefaultLiveSpeechRecognitionService(
+        sttService: failingStt,
+        bufferThresholdBytes: 0,
+      );
+
+      final controller = LiveMicrophoneController(
+        speechRecognitionService: liveSttService,
+        detectionEngine: const MockScamDetectionEngine(),
+        permissionHandler: MockMicrophonePermissionHandler(status: MicrophonePermissionStatus.granted),
+      );
+
+      await controller.initialize();
+      await controller.startListening();
+
+      // Audio bytes fed into pipeline, but STT throws
+      try {
+        await liveSttService.processAudioBytes(Uint8List(100));
+      } catch (_) {}
+
+      expect(controller.hasEvaluatedSpeech, isFalse);
+      expect(controller.hasTranscriptionError, isTrue);
+      expect(controller.riskStatusSummary, contains('Transcription error encountered'));
+      expect(controller.riskStatusSummary, contains('safety cannot be confirmed'));
+
+      // Stopping should NOT log an unanalyzed session as "Safe" in history
+      final historyBefore = CallHistoryRepository.instance.records.length;
+      await controller.stopListening();
+      final historyAfter = CallHistoryRepository.instance.records.length;
+      expect(historyAfter, historyBefore); // Zero fake safe records!
+
+      controller.dispose();
+    });
+
+    test('19. Partial transcription failure warns user that evaluation is incomplete', () async {
+      final stubStt = RecordingSpeechToTextService();
+      final liveSttService = DefaultLiveSpeechRecognitionService(
+        sttService: stubStt,
+        bufferThresholdBytes: 0,
+      );
+
+      final controller = LiveMicrophoneController(
+        speechRecognitionService: liveSttService,
+        detectionEngine: const MockScamDetectionEngine(),
+        permissionHandler: MockMicrophonePermissionHandler(status: MicrophonePermissionStatus.granted),
+      );
+
+      await controller.initialize();
+      await controller.startListening();
+
+      // Utterance 1 evaluates as harmless speech
+      await controller.addSpokenLine('Hello, checking in on Sunday lunch plans.');
+      expect(controller.hasEvaluatedSpeech, isTrue);
+      expect(controller.hasTranscriptionError, isFalse);
+
+      // Now simulate transcription error on subsequent audio
+      stubStt.pendingError = const SpeechToTextException(
+        SpeechToTextErrorType.transcriptionTimeout,
+        'Upstream timeout on chunk 2',
+      );
+
+      try {
+        await liveSttService.processAudioBytes(Uint8List(100));
+      } catch (_) {}
+
+      expect(controller.hasEvaluatedSpeech, isTrue);
+      expect(controller.hasTranscriptionError, isTrue);
+      expect(controller.riskStatusSummary, contains('Warning: Subsequent transcription failed'));
+
+      // Stop listening persists record with warning note
+      await controller.stopListening();
+      final saved = CallHistoryRepository.instance.records.first;
+      expect(saved.source, AssessmentSource.microphoneAudio);
+      expect(saved.subtitle, contains('Encountered transcription errors'));
+      expect(saved.explanation, contains('Transcription warning: Speech recognition encountered provider errors'));
+
+      controller.dispose();
+    });
+
+    test('20. Calling stopListening() multiple times does not produce duplicate history records', () async {
+      final harmlessStt = RecordingSpeechToTextService(
+        returnLines: [
+          const ConversationLine(
+            speaker: Speaker.caller,
+            text: 'Good afternoon, confirming our dentist appointment tomorrow.',
+          ),
+        ],
+      );
+
+      final liveSttService = DefaultLiveSpeechRecognitionService(
+        sttService: harmlessStt,
+        bufferThresholdBytes: 0,
+      );
+
+      final controller = LiveMicrophoneController(
+        speechRecognitionService: liveSttService,
+        detectionEngine: const MockScamDetectionEngine(),
+        permissionHandler: MockMicrophonePermissionHandler(status: MicrophonePermissionStatus.granted),
+      );
+
+      await controller.initialize();
+      await controller.startListening();
+
+      await liveSttService.processAudioBytes(Uint8List(100));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final countBefore = CallHistoryRepository.instance.records.length;
+
+      // Call stopListening multiple times in rapid succession
+      await controller.stopListening();
+      await controller.stopListening();
+      await controller.stopListening();
+
+      final countAfter = CallHistoryRepository.instance.records.length;
+      expect(countAfter, countBefore + 1); // Exactly 1 record added, no duplicates!
+
+      controller.dispose();
+    });
+
+    testWidgets('21. LiveMicrophoneScreen widget UI renders transcription failure banner when ASR fails', (tester) async {
+      final failingStt = RecordingSpeechToTextService(
+        pendingError: const SpeechToTextException(
+          SpeechToTextErrorType.transcriptionFailure,
+          'Recognition connection failed',
+        ),
+      );
+
+      final liveSttService = DefaultLiveSpeechRecognitionService(
+        sttService: failingStt,
+        bufferThresholdBytes: 0,
+      );
+
+      final mockCapture = MockMicrophoneAudioCaptureService();
+      final controller = LiveMicrophoneController(
+        speechRecognitionService: liveSttService,
+        audioCaptureService: mockCapture,
+        permissionHandler: MockMicrophonePermissionHandler(status: MicrophonePermissionStatus.granted),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: LiveMicrophoneScreen(controller: controller),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Start listening and trigger error
+      await controller.startListening();
+      mockCapture.setState(AudioCaptureState.capturing);
+
+      try {
+        await liveSttService.processAudioBytes(Uint8List(50));
+      } catch (_) {}
+
+      await tester.pumpAndSettle();
+
+      // Verify transcription failure banner is displayed
+      expect(find.byKey(const Key('transcription_failure_banner')), findsOneWidget);
+      expect(find.text('Evaluation Unavailable'), findsOneWidget);
+      expect(
+        find.textContaining('GuardCall cannot confirm whether this call is safe'),
+        findsOneWidget,
+      );
+
+      await controller.stopListening();
     });
   });
 }

@@ -53,6 +53,8 @@ class LiveMicrophoneController extends ChangeNotifier {
             DefaultLiveSpeechRecognitionService(bufferThresholdBytes: 48000),
         _detectionEngine = detectionEngine ?? DetectionProviderFactory.getDetectionEngine();
 
+  bool _historyLoggedForSession = false;
+
   // Getters
   MicrophonePermissionStatus get permissionStatus => _permissionStatus;
   AudioCaptureState get captureState => _captureState;
@@ -66,6 +68,30 @@ class LiveMicrophoneController extends ChangeNotifier {
   int get sessionDurationSeconds => _sessionDurationSeconds;
   bool get isCapturing => _captureState == AudioCaptureState.capturing;
   bool get isWarningActive => _warningModalActive;
+
+  /// Whether genuine spoken dialogue has been recognized and evaluated.
+  bool get hasEvaluatedSpeech => _transcriptSegments.isNotEmpty;
+
+  /// Whether speech-to-text recognition encountered an active provider or network error.
+  bool get hasTranscriptionError =>
+      _speechRecognitionService.lastError != null || _errorMessage != null;
+
+  /// Explanatory summary distinguishing confirmed safety from pending or failed transcription.
+  String get riskStatusSummary {
+    if (hasTranscriptionError && !hasEvaluatedSpeech) {
+      return 'Transcription error encountered. Speech could not be transcribed; call safety cannot be confirmed.';
+    }
+    if (hasTranscriptionError && hasEvaluatedSpeech) {
+      return 'Warning: Subsequent transcription failed. Prior evaluated dialogue: ${_currentAnalysis.summary}';
+    }
+    if (!hasEvaluatedSpeech && isCapturing) {
+      return 'Monitoring speech... No spoken words recognized yet. Threat evaluation will update once speech is recognized.';
+    }
+    if (!hasEvaluatedSpeech && !isCapturing) {
+      return 'Microphone shield idle. Start capture to begin live threat evaluation.';
+    }
+    return _currentAnalysis.summary;
+  }
 
   // Diagnostics Getters
   bool get isSttConfigured => _speechRecognitionService.isConfigured;
@@ -175,6 +201,7 @@ class LiveMicrophoneController extends ChangeNotifier {
 
     try {
       _sessionDurationSeconds = 0;
+      _historyLoggedForSession = false;
       _sessionTimer?.cancel();
       _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         _sessionDurationSeconds++;
@@ -311,7 +338,8 @@ class LiveMicrophoneController extends ChangeNotifier {
 
   /// Persists the completed live microphone evaluation to [CallHistoryRepository].
   Future<void> logAssessmentToHistory() async {
-    if (_transcriptSegments.isEmpty) return;
+    if (_historyLoggedForSession || _transcriptSegments.isEmpty) return;
+    _historyLoggedForSession = true;
 
     final now = DateTime.now();
     final timeStr =
@@ -327,12 +355,24 @@ class LiveMicrophoneController extends ChangeNotifier {
             ? 'Exercise high caution. Verify caller identity using an official callback number.'
             : _currentAnalysis.riskLevel == RiskLevel.suspicious
                 ? 'Stay alert. Do not click links or share confidential information.'
-                : 'No protective action needed. Conversation assessed as safe.';
+                : (hasTranscriptionError
+                    ? 'Incomplete evaluation. Speech recognition encountered errors during this call. Verify independently.'
+                    : 'No protective action needed. Conversation assessed as safe.');
+
+    final subtitle = hasTranscriptionError
+        ? '${_currentAnalysis.summary} (Note: Encountered transcription errors)'
+        : _currentAnalysis.summary;
+
+    final explanationText = hasTranscriptionError
+        ? '${_currentAnalysis.explanations.isNotEmpty ? _currentAnalysis.explanations.join('\n• ') : _currentAnalysis.summary}\n• Transcription warning: Speech recognition encountered provider errors during this session.'
+        : (_currentAnalysis.explanations.isNotEmpty
+            ? _currentAnalysis.explanations.join('\n• ')
+            : _currentAnalysis.summary);
 
     final record = CallHistoryRecord(
       id: sessionId,
       title: 'Microphone Audio Analysis',
-      subtitle: _currentAnalysis.summary,
+      subtitle: subtitle,
       timestamp: 'Today • $timeStr',
       duration: '${_sessionDurationSeconds}s',
       riskScore: _currentAnalysis.riskScore,
@@ -340,9 +380,7 @@ class LiveMicrophoneController extends ChangeNotifier {
       signals: _currentAnalysis.detectedSignals.map((s) => s.title).toList(),
       isSimulated: false,
       source: AssessmentSource.microphoneAudio,
-      explanation: _currentAnalysis.explanations.isNotEmpty
-          ? _currentAnalysis.explanations.join('\n• ')
-          : _currentAnalysis.summary,
+      explanation: explanationText,
       transcriptExcerpt: excerpt.isNotEmpty ? excerpt : fullTranscript,
       recommendedAction: recommendedAction,
     );

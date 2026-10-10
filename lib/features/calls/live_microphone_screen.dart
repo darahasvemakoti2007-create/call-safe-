@@ -456,17 +456,80 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (_controller.hasTranscriptionError && !_controller.hasEvaluatedSpeech) ...[
+                          Container(
+                            key: const Key('transcription_failure_banner'),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppTheme.riskHigh.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppTheme.riskHigh.withValues(alpha: 0.35)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.warning_amber_rounded, color: AppTheme.riskHigh, size: 20),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'Transcription Error: Speech recognition failed or is unconfigured. GuardCall cannot confirm whether this call is safe.',
+                                    style: TextStyle(
+                                      color: AppTheme.riskHigh,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ] else if (_controller.hasTranscriptionError && _controller.hasEvaluatedSpeech) ...[
+                          Container(
+                            key: const Key('transcription_partial_warning_banner'),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppTheme.riskSuspicious.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppTheme.riskSuspicious.withValues(alpha: 0.3)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.info_outline_rounded, color: AppTheme.riskSuspicious, size: 18),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Notice: Subsequent audio transcription encountered errors. Risk evaluation may be incomplete.',
+                                    style: TextStyle(color: AppTheme.riskSuspicious, fontSize: 11),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             RiskBadge(
-                              level: _controller.currentAnalysis.riskLevel,
-                              score: _controller.currentAnalysis.riskScore,
+                              level: _controller.hasEvaluatedSpeech
+                                  ? _controller.currentAnalysis.riskLevel
+                                  : RiskLevel.safe,
+                              score: _controller.hasEvaluatedSpeech
+                                  ? _controller.currentAnalysis.riskScore
+                                  : 0,
                             ),
                             Text(
-                              'Threat Score: ${_controller.currentAnalysis.riskScore}/100',
+                              _controller.hasEvaluatedSpeech
+                                  ? 'Threat Score: ${_controller.currentAnalysis.riskScore}/100'
+                                  : (_controller.hasTranscriptionError
+                                      ? 'Evaluation Unavailable'
+                                      : (isCapturing ? 'Awaiting Speech...' : 'Standby')),
                               style: TextStyle(
-                                color: _controller.currentAnalysis.riskLevel.color,
+                                color: _controller.hasEvaluatedSpeech
+                                    ? _controller.currentAnalysis.riskLevel.color
+                                    : (_controller.hasTranscriptionError
+                                        ? AppTheme.riskHigh
+                                        : AppTheme.textSecondary),
                                 fontWeight: FontWeight.w700,
                                 fontSize: 14,
                               ),
@@ -475,7 +538,7 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          _controller.currentAnalysis.summary,
+                          _controller.riskStatusSummary,
                           style: theme.textTheme.bodyMedium?.copyWith(
                                 color: AppTheme.textPrimary,
                                 height: 1.4,
