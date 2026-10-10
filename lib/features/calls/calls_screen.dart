@@ -4,6 +4,7 @@ import '../../core/widgets/glass_card.dart';
 import '../../core/widgets/primary_button.dart';
 import '../../core/widgets/section_header.dart';
 import '../demo/demo_center_screen.dart';
+import '../sms/sms_protection_screen.dart';
 import 'live_microphone_screen.dart';
 
 /// The active call monitoring view.
@@ -48,14 +49,14 @@ class CallsScreen extends StatelessWidget {
 
               // Active Call Area (Empty state)
               GlassCard(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        width: 80,
-                        height: 80,
+                        width: 64,
+                        height: 64,
                         decoration: BoxDecoration(
                           color: AppTheme.navySurfaceLight,
                           shape: BoxShape.circle,
@@ -67,10 +68,10 @@ class CallsScreen extends StatelessWidget {
                         child: const Icon(
                           Icons.phone_disabled_rounded,
                           color: AppTheme.tealPrimary,
-                          size: 38,
+                          size: 32,
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
                       Text(
                         'No Active Call',
                         style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -84,10 +85,10 @@ class CallsScreen extends StatelessWidget {
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: AppTheme.textSecondary,
-                              height: 1.5,
+                              height: 1.4,
                             ),
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 20),
                       PrimaryButton(
                         key: const Key('open_live_mic_shield_button'),
                         text: 'Start Microphone Shield',
@@ -100,10 +101,10 @@ class CallsScreen extends StatelessWidget {
                           );
                         },
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       SizedBox(
                         width: double.infinity,
-                        height: 48,
+                        height: 46,
                         child: OutlinedButton.icon(
                           key: const Key('open_demo_center_button'),
                           style: OutlinedButton.styleFrom(
@@ -116,6 +117,31 @@ class CallsScreen extends StatelessWidget {
                           icon: const Icon(Icons.play_circle_outline_rounded, size: 20),
                           label: const Text('Open Demo Center', style: TextStyle(fontWeight: FontWeight.w600)),
                           onPressed: () => _openDemoCenter(context),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 46,
+                        child: OutlinedButton.icon(
+                          key: const Key('open_sms_protection_button'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.tealPrimary,
+                            side: const BorderSide(color: AppTheme.navyBorder),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          icon: const Icon(Icons.sms_outlined, size: 20),
+                          label: const Text('Analyze Suspicious SMS / Text',
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const SmsProtectionScreen(),
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ],

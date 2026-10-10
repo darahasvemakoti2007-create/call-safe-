@@ -12,6 +12,7 @@ import '../demo/demo_center_screen.dart';
 import '../family/family_screen.dart';
 import '../history/call_history_repository.dart';
 import '../history/history_screen.dart';
+import '../sms/sms_protection_screen.dart';
 
 /// The primary dashboard of GuardCall.
 ///
@@ -269,6 +270,31 @@ class _HomeScreenState extends State<HomeScreen> {
                         text: 'Start Demo Call',
                         icon: Icons.phone_in_talk_rounded,
                         onPressed: () => _openDemoCenter(context),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        key: const Key('home_open_sms_protection_button'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.skyAccent,
+                          side: const BorderSide(color: AppTheme.navyBorder),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          minimumSize: const Size.fromHeight(48),
+                        ),
+                        icon: const Icon(Icons.sms_outlined, size: 20),
+                        label: const Text('Analyze Suspicious SMS / Text',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const SmsProtectionScreen(),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ],

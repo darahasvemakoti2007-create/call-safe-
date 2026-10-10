@@ -142,6 +142,9 @@ class FamilyAlertService {
   /// Stream of newly created or updated alerts for local UI reactivity.
   Stream<FamilyAlertRecord> get onAlertCreated => _alertStreamController.stream;
 
+  /// Recorded in-memory alert history for inspection and testing.
+  List<FamilyAlertRecord> get inMemoryAlerts => List.unmodifiable(_inMemoryAlerts);
+
   /// Whether Supabase backend is configured and ready.
   bool get isConfigured => SupabaseService.instance.isConfigured;
 

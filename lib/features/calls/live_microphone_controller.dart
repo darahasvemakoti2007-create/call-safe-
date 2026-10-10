@@ -339,6 +339,7 @@ class LiveMicrophoneController extends ChangeNotifier {
       riskLevel: _currentAnalysis.riskLevel,
       signals: _currentAnalysis.detectedSignals.map((s) => s.title).toList(),
       isSimulated: false,
+      source: AssessmentSource.microphoneAudio,
       explanation: _currentAnalysis.explanations.isNotEmpty
           ? _currentAnalysis.explanations.join('\n• ')
           : _currentAnalysis.summary,

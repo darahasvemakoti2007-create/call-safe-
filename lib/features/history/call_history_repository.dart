@@ -5,7 +5,41 @@ import '../../core/services/call_session_service.dart';
 import '../../core/services/supabase_service.dart';
 import '../../core/widgets/risk_badge.dart';
 
-/// Represents a single recorded call risk assessment.
+/// Provenance of a recorded risk assessment.
+enum AssessmentSource {
+  demoCall,
+  microphoneAudio,
+  manualSms,
+  incomingSms;
+
+  String get label {
+    switch (this) {
+      case AssessmentSource.demoCall:
+        return 'Demo Simulation';
+      case AssessmentSource.microphoneAudio:
+        return 'Microphone Audio Analysis';
+      case AssessmentSource.manualSms:
+        return 'Manual SMS Analysis';
+      case AssessmentSource.incomingSms:
+        return 'Incoming SMS Detection';
+    }
+  }
+
+  String get badgeLabel {
+    switch (this) {
+      case AssessmentSource.demoCall:
+        return 'DEMO';
+      case AssessmentSource.microphoneAudio:
+        return 'MIC SHIELD';
+      case AssessmentSource.manualSms:
+        return 'MANUAL SMS';
+      case AssessmentSource.incomingSms:
+        return 'INCOMING SMS';
+    }
+  }
+}
+
+/// Represents a single recorded call or message risk assessment.
 class CallHistoryRecord {
   final String id;
   final String title;
@@ -16,6 +50,7 @@ class CallHistoryRecord {
   final RiskLevel riskLevel;
   final List<String> signals;
   final bool isSimulated;
+  final AssessmentSource? source;
   final String? interventionStatus;
   final String? explanation;
   final String? transcriptExcerpt;
@@ -31,6 +66,7 @@ class CallHistoryRecord {
     required this.riskLevel,
     required this.signals,
     this.isSimulated = true,
+    this.source,
     this.interventionStatus,
     this.explanation,
     this.transcriptExcerpt,
@@ -47,6 +83,7 @@ class CallHistoryRecord {
     RiskLevel? riskLevel,
     List<String>? signals,
     bool? isSimulated,
+    AssessmentSource? source,
     String? interventionStatus,
     String? explanation,
     String? transcriptExcerpt,
@@ -62,6 +99,7 @@ class CallHistoryRecord {
       riskLevel: riskLevel ?? this.riskLevel,
       signals: signals ?? this.signals,
       isSimulated: isSimulated ?? this.isSimulated,
+      source: source ?? this.source,
       interventionStatus: interventionStatus ?? this.interventionStatus,
       explanation: explanation ?? this.explanation,
       transcriptExcerpt: transcriptExcerpt ?? this.transcriptExcerpt,
@@ -80,6 +118,7 @@ class CallHistoryRecord {
       'riskLevel': riskLevel.name,
       'signals': signals,
       'isSimulated': isSimulated,
+      if (source != null) 'source': source!.name,
       if (interventionStatus != null) 'interventionStatus': interventionStatus,
       if (explanation != null) 'explanation': explanation,
       if (transcriptExcerpt != null) 'transcriptExcerpt': transcriptExcerpt,
@@ -93,6 +132,26 @@ class CallHistoryRecord {
       (l) => l.name.toLowerCase() == levelName.toLowerCase(),
       orElse: () => RiskLevel.safe,
     );
+
+    AssessmentSource? parsedSource;
+    if (map['source'] != null) {
+      final sourceStr = map['source'].toString().toLowerCase();
+      parsedSource = AssessmentSource.values.firstWhere(
+        (s) => s.name.toLowerCase() == sourceStr,
+        orElse: () => AssessmentSource.demoCall,
+      );
+    } else {
+      final titleStr = (map['title'] as String? ?? '').toLowerCase();
+      if (titleStr.contains('sms')) {
+        parsedSource = AssessmentSource.manualSms;
+      } else if (titleStr.contains('microphone')) {
+        parsedSource = AssessmentSource.microphoneAudio;
+      } else {
+        final isSim = map['isSimulated'] as bool? ?? true;
+        parsedSource = isSim ? AssessmentSource.demoCall : AssessmentSource.microphoneAudio;
+      }
+    }
+
     return CallHistoryRecord(
       id: map['id'] as String? ?? '',
       title: map['title'] as String? ?? 'Call Assessment',
@@ -103,6 +162,7 @@ class CallHistoryRecord {
       riskLevel: level,
       signals: (map['signals'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       isSimulated: map['isSimulated'] as bool? ?? true,
+      source: parsedSource,
       interventionStatus: map['interventionStatus'] as String?,
       explanation: map['explanation'] as String?,
       transcriptExcerpt: map['transcriptExcerpt'] as String?,
@@ -133,6 +193,8 @@ class CallHistoryRepository extends ChangeNotifier {
           riskScore: 92,
           riskLevel: RiskLevel.critical,
           signals: ['Fear / Threat', 'Financial Demand', 'Urgency'],
+          isSimulated: true,
+          source: AssessmentSource.demoCall,
           explanation:
               'Caller posed as an attorney claiming a family member was detained abroad and urgently demanded \$4,500 via non-reversible wire transfer.',
           transcriptExcerpt:
@@ -149,6 +211,8 @@ class CallHistoryRepository extends ChangeNotifier {
           riskScore: 78,
           riskLevel: RiskLevel.high,
           signals: ['Authority Impersonation', 'OTP Request', 'Urgency'],
+          isSimulated: true,
+          source: AssessmentSource.demoCall,
           explanation:
               'Caller impersonated a fraud prevention officer from First Federal Bank demanding a 6-digit one-time passcode to unfreeze an account.',
           transcriptExcerpt:
@@ -165,6 +229,8 @@ class CallHistoryRepository extends ChangeNotifier {
           riskScore: 55,
           riskLevel: RiskLevel.suspicious,
           signals: ['Suspicious Link', 'Unverified Sender'],
+          isSimulated: true,
+          source: AssessmentSource.manualSms,
           explanation:
               'Automated message claiming a package delivery failed and requested opening an external link to pay re-delivery fees.',
           transcriptExcerpt:
@@ -181,6 +247,8 @@ class CallHistoryRepository extends ChangeNotifier {
           riskScore: 12,
           riskLevel: RiskLevel.safe,
           signals: ['No Scam Indicators'],
+          isSimulated: true,
+          source: AssessmentSource.demoCall,
           explanation:
               'Automated notification confirming a routine prescription refill is ready for pickup. No personal credentials or payments were requested.',
           transcriptExcerpt:

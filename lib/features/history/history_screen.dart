@@ -447,11 +447,42 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      '$timestamp • ${record.duration}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppTheme.textMuted,
+                    Row(
+                      children: [
+                        if (record.source != null) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            margin: const EdgeInsets.only(right: 6),
+                            decoration: BoxDecoration(
+                              color: AppTheme.navySurfaceLight,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: AppTheme.navyBorder,
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Text(
+                              record.source!.badgeLabel,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.skyAccent,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
                           ),
+                        ],
+                        Expanded(
+                          child: Text(
+                            '$timestamp • ${record.duration}',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: AppTheme.textMuted,
+                                ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 );
@@ -472,11 +503,42 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          '$timestamp • ${record.duration}',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppTheme.textMuted,
+                        Row(
+                          children: [
+                            if (record.source != null) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                margin: const EdgeInsets.only(right: 6),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.navySurfaceLight,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: AppTheme.navyBorder,
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: Text(
+                                  record.source!.badgeLabel,
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.skyAccent,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
                               ),
+                            ],
+                            Expanded(
+                              child: Text(
+                                '$timestamp • ${record.duration}',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: AppTheme.textMuted,
+                                    ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

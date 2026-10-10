@@ -67,3 +67,30 @@ Modern Android operating system releases (Android 9 Pie through Android 15/API 3
    - The app never falsely displays "Sent" or "Delivered" without verified physical transmission.
 3. **Database Deployment Postponed:**
    - Supabase database deployment remains postponed. The application runs 100% offline in memory by default.
+
+---
+
+## 6. SMS Scam Detection & Platform Permission Boundaries
+
+### The Android Operating System & Google Play Reality
+1. **Default SMS Handler Requirement:**
+   - Under Google Play Developer Program Policies (specifically the *SMS and Call Log Permissions Policy* introduced across Android 9 through Android 15), apps cannot request `READ_SMS`, `RECEIVE_SMS`, or `READ_CELL_BROADCASTS` unless the application is actively designated as the device's **Default SMS Handler**.
+   - Assistive security tools and call blockers that are not messaging clients are barred from automatically reading user inboxes in the background. Violating this leads to immediate Google Play Store rejection and potential account suspension.
+2. **User Privacy & Snooping Prevention:**
+   - An assistive fraud app should never snoop on private SMS conversations, sensitive bank balance updates, personal two-factor verification codes, or family text threads without explicit, focused intent.
+
+### GuardCall's Safe Message Analysis Architecture
+1. **Manual On-Device Analysis (Safe & Non-Intrusive):**
+   - Seniors or caregivers can paste or type any suspicious message into the dedicated **SMS Scam Shield** screen.
+   - Evaluation is executed entirely on-device via GuardCall's heuristic engine, assessing urgent payment demands, OTP credential theft, fake authority claims, and phishing URLs.
+   - Zero inbox access permissions (`READ_SMS`, `RECEIVE_SMS`) are requested in `AndroidManifest.xml`.
+2. **Strict Privacy Policy Compliance:**
+   - Only the specific message submitted by the user is evaluated.
+   - Private contacts, unrelated inbox threads, and unanalyzed text messages are never accessed, inspected, or transmitted.
+   - The user-facing history log only stores the structured threat metadata and an excerpt of the analyzed text for audit review.
+3. **Future Incoming SMS Integration Path (Roadmap):**
+   - Automated incoming message triage requires either:
+     - User opting into Android's system **SMS Retriever API** / Google Play Services consent flow (strictly for sender-consented verification), or
+     - Registering as an enterprise Default SMS Handler with full messaging UI support and explicit Google Play Policy Declaration approval.
+   - Until authorized under these strict platform constraints, GuardCall maintains manual analysis as the reliable, completely secure, and 100% private production baseline.
+

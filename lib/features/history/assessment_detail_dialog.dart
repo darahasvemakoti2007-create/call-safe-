@@ -115,7 +115,7 @@ class AssessmentDetailDialog extends StatelessWidget {
                         Text(
                           record.isSimulated
                               ? 'Simulated Training Assessment'
-                              : 'Live Call Session',
+                              : (record.source?.label ?? 'Live Call Session'),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: AppTheme.textSecondary,
                           ),

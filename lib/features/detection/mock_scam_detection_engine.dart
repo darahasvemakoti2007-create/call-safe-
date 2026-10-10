@@ -322,9 +322,13 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       if ((lower.contains('tell me the otp') ||
               lower.contains('share the otp') ||
               lower.contains('provide the otp') ||
+              lower.contains('send your otp') ||
+              lower.contains('send the otp') ||
+              lower.contains('enter your otp') ||
               lower.contains('otp you just received') ||
               lower.contains('verification code') ||
               lower.contains('tell me your pin') ||
+              lower.contains('share your pin') ||
               lower.contains('cvv') ||
               lower.contains('password')) &&
           !hasProtectiveContext) {
@@ -425,6 +429,12 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'tracking link',
       'http://',
       'https://',
+      'bit.ly/',
+      'tinyurl.com/',
+      'click here',
+      'tap the link',
+      'tap here',
+      'open link',
     ];
 
     for (final pattern in linkPatterns) {
