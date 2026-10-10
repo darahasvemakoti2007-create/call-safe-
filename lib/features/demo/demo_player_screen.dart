@@ -141,6 +141,22 @@ class _DemoPlayerScreenState extends State<DemoPlayerScreen> {
     final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     final sessionId = 'demo_${now.millisecondsSinceEpoch}';
 
+    final recommendedAction = analysis.riskLevel == RiskLevel.critical
+        ? 'Hang up immediately. Do not share OTPs, passwords, or initiate financial transfers. Notify your primary caregiver.'
+        : analysis.riskLevel == RiskLevel.high
+            ? 'Do not share personal verification codes. Verify caller identity through trusted callback numbers.'
+            : analysis.riskLevel == RiskLevel.suspicious
+                ? 'Exercise caution. Do not follow instructions to click links or download software.'
+                : 'No protective action needed. Conversation assessed as safe.';
+
+    final dialogueExcerpt = _controller.displayedLines.isNotEmpty
+        ? _controller.displayedLines.take(3).map((l) => '${l.speaker}: "${l.text}"').join('\n')
+        : null;
+
+    final explanationText = analysis.explanations.isNotEmpty
+        ? analysis.explanations.join('\n• ')
+        : analysis.summary;
+
     final record = CallHistoryRecord(
       id: sessionId,
       title: '${widget.scenario.title} (Simulation)',
@@ -152,6 +168,9 @@ class _DemoPlayerScreenState extends State<DemoPlayerScreen> {
       signals: analysis.detectedSignals.map((s) => s.title).toList(),
       isSimulated: true,
       interventionStatus: _controller.interventionState.historyStatus,
+      explanation: explanationText,
+      transcriptExcerpt: dialogueExcerpt,
+      recommendedAction: recommendedAction,
     );
 
     CallHistoryRepository.instance.addRecord(record);

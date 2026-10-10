@@ -233,6 +233,15 @@ class AuthState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sets mock authentication state for testing purposes.
+  @visibleForTesting
+  void setMockUser({AuthUser? user, UserProfile? profile, AuthStatus? status}) {
+    _currentUser = user;
+    _currentProfile = profile;
+    if (status != null) _status = status;
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _authSubscription?.cancel();

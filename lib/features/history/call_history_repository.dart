@@ -17,6 +17,9 @@ class CallHistoryRecord {
   final List<String> signals;
   final bool isSimulated;
   final String? interventionStatus;
+  final String? explanation;
+  final String? transcriptExcerpt;
+  final String? recommendedAction;
 
   const CallHistoryRecord({
     required this.id,
@@ -29,7 +32,42 @@ class CallHistoryRecord {
     required this.signals,
     this.isSimulated = true,
     this.interventionStatus,
+    this.explanation,
+    this.transcriptExcerpt,
+    this.recommendedAction,
   });
+
+  CallHistoryRecord copyWith({
+    String? id,
+    String? title,
+    String? subtitle,
+    String? timestamp,
+    String? duration,
+    int? riskScore,
+    RiskLevel? riskLevel,
+    List<String>? signals,
+    bool? isSimulated,
+    String? interventionStatus,
+    String? explanation,
+    String? transcriptExcerpt,
+    String? recommendedAction,
+  }) {
+    return CallHistoryRecord(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      subtitle: subtitle ?? this.subtitle,
+      timestamp: timestamp ?? this.timestamp,
+      duration: duration ?? this.duration,
+      riskScore: riskScore ?? this.riskScore,
+      riskLevel: riskLevel ?? this.riskLevel,
+      signals: signals ?? this.signals,
+      isSimulated: isSimulated ?? this.isSimulated,
+      interventionStatus: interventionStatus ?? this.interventionStatus,
+      explanation: explanation ?? this.explanation,
+      transcriptExcerpt: transcriptExcerpt ?? this.transcriptExcerpt,
+      recommendedAction: recommendedAction ?? this.recommendedAction,
+    );
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -43,6 +81,9 @@ class CallHistoryRecord {
       'signals': signals,
       'isSimulated': isSimulated,
       if (interventionStatus != null) 'interventionStatus': interventionStatus,
+      if (explanation != null) 'explanation': explanation,
+      if (transcriptExcerpt != null) 'transcriptExcerpt': transcriptExcerpt,
+      if (recommendedAction != null) 'recommendedAction': recommendedAction,
     };
   }
 
@@ -63,6 +104,9 @@ class CallHistoryRecord {
       signals: (map['signals'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       isSimulated: map['isSimulated'] as bool? ?? true,
       interventionStatus: map['interventionStatus'] as String?,
+      explanation: map['explanation'] as String?,
+      transcriptExcerpt: map['transcriptExcerpt'] as String?,
+      recommendedAction: map['recommendedAction'] as String?,
     );
   }
 }
@@ -89,6 +133,12 @@ class CallHistoryRepository extends ChangeNotifier {
           riskScore: 92,
           riskLevel: RiskLevel.critical,
           signals: ['Fear / Threat', 'Financial Demand', 'Urgency'],
+          explanation:
+              'Caller posed as an attorney claiming a family member was detained abroad and urgently demanded \$4,500 via non-reversible wire transfer.',
+          transcriptExcerpt:
+              '"Grandma, it\'s me! Please don\'t tell mom, I was arrested in Mexico and need \$4,500 wire transfer right now..."',
+          recommendedAction:
+              'Hang up immediately. Contact your family member directly on their known personal phone number. Never wire emergency funds without independent verification.',
         ),
         const CallHistoryRecord(
           id: 'initial_2',
@@ -99,6 +149,12 @@ class CallHistoryRepository extends ChangeNotifier {
           riskScore: 78,
           riskLevel: RiskLevel.high,
           signals: ['Authority Impersonation', 'OTP Request', 'Urgency'],
+          explanation:
+              'Caller impersonated a fraud prevention officer from First Federal Bank demanding a 6-digit one-time passcode to unfreeze an account.',
+          transcriptExcerpt:
+              '"This is Officer Bradley from Fraud Prevention. We detected an unauthorized transaction. Read back the 6-digit code sent to your phone to cancel it."',
+          recommendedAction:
+              'Never share one-time authentication codes or card PINs. Call your bank using the official number on the back of your card.',
         ),
         const CallHistoryRecord(
           id: 'initial_3',
@@ -109,6 +165,12 @@ class CallHistoryRepository extends ChangeNotifier {
           riskScore: 55,
           riskLevel: RiskLevel.suspicious,
           signals: ['Suspicious Link', 'Unverified Sender'],
+          explanation:
+              'Automated message claiming a package delivery failed and requested opening an external link to pay re-delivery fees.',
+          transcriptExcerpt:
+              '"Your parcel delivery failed due to an incomplete address. Tap the link sent via text to verify your details and avoid package return."',
+          recommendedAction:
+              'Do not click links from unexpected delivery notices. Check package tracking numbers directly on official postal or courier websites.',
         ),
         const CallHistoryRecord(
           id: 'initial_4',
@@ -119,6 +181,12 @@ class CallHistoryRepository extends ChangeNotifier {
           riskScore: 12,
           riskLevel: RiskLevel.safe,
           signals: ['No Scam Indicators'],
+          explanation:
+              'Automated notification confirming a routine prescription refill is ready for pickup. No personal credentials or payments were requested.',
+          transcriptExcerpt:
+              '"Hello, this is a reminder from Community Pharmacy that your monthly prescription is ready for pickup at the counter."',
+          recommendedAction:
+              'Routine notification. No protective action required.',
         ),
       ];
 

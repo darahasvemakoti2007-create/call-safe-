@@ -30,6 +30,8 @@ class _AppNavigationState extends State<AppNavigation> {
     final screens = [
       HomeScreen(
         onNavigateToCalls: () => _onDestinationSelected(1),
+        onNavigateToHistory: () => _onDestinationSelected(2),
+        onNavigateToFamily: () => _onDestinationSelected(3),
       ),
       const CallsScreen(),
       const HistoryScreen(),

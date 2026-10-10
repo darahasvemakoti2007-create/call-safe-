@@ -333,4 +333,9 @@ class FamilyContactService {
   void resetForTesting() {
     _initializeDemoContacts();
   }
+
+  /// Clears in-memory contacts for testing empty state.
+  void clearForTesting() {
+    _inMemoryContacts.clear();
+  }
 }

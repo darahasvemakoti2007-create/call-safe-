@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'auth_state.dart';
 import 'supabase_service.dart';
 
 /// Domain model representing an authenticated relationship between an
@@ -191,6 +193,13 @@ class FamilyRelationshipService {
   final List<FamilyRelationship> _inMemoryRelationships = [];
   final List<FamilyInvitation> _inMemoryInvitations = [];
 
+  final StreamController<FamilyRelationship> _relationshipChangeController =
+      StreamController<FamilyRelationship>.broadcast();
+
+  /// Reactive stream emitting updated relationships on creation, update, deletion, or acceptance.
+  Stream<FamilyRelationship> get onRelationshipChanged =>
+      _relationshipChangeController.stream;
+
   void _initDemoData() {
     _inMemoryRelationships.clear();
     _inMemoryInvitations.clear();
@@ -302,16 +311,21 @@ class FamilyRelationshipService {
   }
 
   /// Retrieves relationships where the current user is designated as the caregiver.
-  Future<List<FamilyRelationship>> getCaregiverRelationships() async {
+  Future<List<FamilyRelationship>> getCaregiverRelationships({String? caregiverUserId}) async {
     if (!isConfigured) {
-      // In offline demo mode, provide an empty list or demo caregiver perspective
-      return [];
+      final effectiveId = caregiverUserId ?? AuthState.instance.currentUser?.id;
+      if (effectiveId == null || effectiveId.isEmpty) {
+        return List.unmodifiable(_inMemoryRelationships);
+      }
+      return List.unmodifiable(
+        _inMemoryRelationships.where((r) => r.caregiverUserId == effectiveId).toList(),
+      );
     }
 
     final client = SupabaseService.instance.client;
     if (client == null) return [];
 
-    final currentUserId = client.auth.currentUser?.id;
+    final currentUserId = caregiverUserId ?? client.auth.currentUser?.id;
     if (currentUserId == null) return [];
 
     try {
@@ -351,6 +365,7 @@ class FamilyRelationshipService {
       );
       _inMemoryRelationships.add(rel);
       await _saveToStorage();
+      _relationshipChangeController.add(rel);
       return rel;
     }
 
@@ -378,6 +393,7 @@ class FamilyRelationshipService {
 
       final created = FamilyRelationship.fromMap(res);
       _inMemoryRelationships.add(created);
+      _relationshipChangeController.add(created);
       return created;
     } catch (e) {
       developer.log('Failed to create relationship: $e', name: 'FamilyRelationshipService', error: e);
@@ -390,9 +406,13 @@ class FamilyRelationshipService {
     if (!isConfigured) {
       final idx = _inMemoryRelationships.indexWhere((r) => r.id == id);
       if (idx != -1) {
-        _inMemoryRelationships[idx] =
-            _inMemoryRelationships[idx].copyWith(enabled: enabled, updatedAt: DateTime.now());
+        final updated = _inMemoryRelationships[idx].copyWith(
+          enabled: enabled,
+          updatedAt: DateTime.now(),
+        );
+        _inMemoryRelationships[idx] = updated;
         await _saveToStorage();
+        _relationshipChangeController.add(updated);
       }
       return;
     }
@@ -415,8 +435,12 @@ class FamilyRelationshipService {
 
       final idx = _inMemoryRelationships.indexWhere((r) => r.id == id);
       if (idx != -1) {
-        _inMemoryRelationships[idx] =
-            _inMemoryRelationships[idx].copyWith(enabled: enabled);
+        final updated = _inMemoryRelationships[idx].copyWith(
+          enabled: enabled,
+          updatedAt: DateTime.now(),
+        );
+        _inMemoryRelationships[idx] = updated;
+        _relationshipChangeController.add(updated);
       }
     } catch (e) {
       developer.log('Failed to toggle relationship: $e', name: 'FamilyRelationshipService', error: e);
@@ -426,8 +450,12 @@ class FamilyRelationshipService {
   /// Deletes a family relationship.
   Future<void> deleteRelationship(String id) async {
     if (!isConfigured) {
-      _inMemoryRelationships.removeWhere((r) => r.id == id);
-      await _saveToStorage();
+      final idx = _inMemoryRelationships.indexWhere((r) => r.id == id);
+      if (idx != -1) {
+        final removed = _inMemoryRelationships.removeAt(idx);
+        await _saveToStorage();
+        _relationshipChangeController.add(removed.copyWith(enabled: false));
+      }
       return;
     }
 
@@ -444,7 +472,11 @@ class FamilyRelationshipService {
           .eq('id', id)
           .eq('owner_user_id', currentUserId);
 
-      _inMemoryRelationships.removeWhere((r) => r.id == id);
+      final idx = _inMemoryRelationships.indexWhere((r) => r.id == id);
+      if (idx != -1) {
+        final removed = _inMemoryRelationships.removeAt(idx);
+        _relationshipChangeController.add(removed.copyWith(enabled: false));
+      }
     } catch (e) {
       developer.log('Failed to delete relationship: $e', name: 'FamilyRelationshipService', error: e);
       rethrow;
@@ -459,21 +491,26 @@ class FamilyRelationshipService {
     required String invitedEmail,
     String? relationship,
     String? displayName,
+    String? ownerUserId,
+    DateTime? expiresAt,
   }) async {
     final cleanEmail = invitedEmail.trim().toLowerCase();
     final cleanRel = relationship?.trim();
     final cleanName = displayName?.trim();
 
     if (!isConfigured) {
+      final effectiveOwnerId = ownerUserId ??
+          AuthState.instance.currentUser?.id ??
+          'demo-owner-id';
       final inv = FamilyInvitation(
         id: 'inv_${DateTime.now().millisecondsSinceEpoch}',
-        ownerUserId: 'demo-owner-id',
+        ownerUserId: effectiveOwnerId,
         invitedEmail: cleanEmail,
         relationship: cleanRel,
         displayName: cleanName,
         status: 'pending',
         createdAt: DateTime.now(),
-        expiresAt: DateTime.now().add(const Duration(days: 7)),
+        expiresAt: expiresAt ?? DateTime.now().add(const Duration(days: 7)),
       );
       _inMemoryInvitations.insert(0, inv);
       await _saveToStorage();
@@ -487,18 +524,21 @@ class FamilyRelationshipService {
     final client = SupabaseService.instance.client;
     if (client == null) throw StateError('Supabase client unavailable.');
 
-    final currentUserId = client.auth.currentUser?.id;
+    final currentUserId = ownerUserId ?? client.auth.currentUser?.id;
     if (currentUserId == null) {
       throw StateError('Authentication required to create invitations.');
     }
 
     try {
-      final data = {
+      final data = <String, dynamic>{
         'owner_user_id': currentUserId,
         'invited_email': cleanEmail,
         'relationship': cleanRel,
         'status': 'pending',
       };
+      if (expiresAt != null) {
+        data['expires_at'] = expiresAt.toIso8601String();
+      }
 
       final res = await client
           .from('family_invitations')
@@ -545,6 +585,52 @@ class FamilyRelationshipService {
     }
   }
 
+  /// Retrieves pending invitations addressed to a designated caregiver account.
+  Future<List<FamilyInvitation>> getPendingInvitationsForCaregiver({
+    String? email,
+  }) async {
+    final cleanEmail = (email ?? AuthState.instance.currentUser?.email)?.trim().toLowerCase();
+
+    if (!isConfigured) {
+      if (cleanEmail == null || cleanEmail.isEmpty) {
+        return List.unmodifiable(
+          _inMemoryInvitations
+              .where((i) => i.status == 'pending' && i.invitedEmail.toLowerCase() == 'demo@guardcall.local')
+              .toList(),
+        );
+      }
+      return List.unmodifiable(
+        _inMemoryInvitations
+            .where((i) => i.status == 'pending' && i.invitedEmail.toLowerCase() == cleanEmail)
+            .toList(),
+      );
+    }
+
+    final client = SupabaseService.instance.client;
+    if (client == null) return [];
+
+    final targetEmail = cleanEmail ?? client.auth.currentUser?.email?.trim().toLowerCase();
+    if (targetEmail == null || targetEmail.isEmpty) return [];
+
+    try {
+      final res = await client
+          .from('family_invitations')
+          .select()
+          .eq('invited_email', targetEmail)
+          .eq('status', 'pending')
+          .order('created_at', ascending: false);
+
+      return (res as List).map((m) => FamilyInvitation.fromMap(m)).toList();
+    } catch (e) {
+      developer.log(
+        'Failed to fetch caregiver invitations: $e.',
+        name: 'FamilyRelationshipService',
+        error: e,
+      );
+      return [];
+    }
+  }
+
   /// Revokes an existing pending invitation.
   Future<void> revokeInvitation(String id) async {
     if (!isConfigured) {
@@ -581,8 +667,261 @@ class FamilyRelationshipService {
     }
   }
 
+  /// Accepts a pending caregiver invitation and establishes an authenticated relationship.
+  ///
+  /// Validations:
+  /// 1. Invitation must exist.
+  /// 2. Invitation must have status 'pending'.
+  /// 3. Invitation must not be expired.
+  /// 4. Current user email must match the invitation's invitedEmail.
+  /// 5. Self-acceptance is rejected (owner cannot accept their own invitation).
+  /// 6. Duplicate active relationships are prevented.
+  Future<FamilyRelationship> acceptInvitation(
+    String invitationId, {
+    String? caregiverUserId,
+    String? caregiverEmail,
+    String? caregiverDisplayName,
+  }) async {
+    final effectiveUserId = caregiverUserId ??
+        (isConfigured
+            ? SupabaseService.instance.client?.auth.currentUser?.id
+            : AuthState.instance.currentUser?.id) ??
+        'demo-caregiver-user';
+
+    final effectiveEmail = (caregiverEmail ??
+            (isConfigured
+                ? SupabaseService.instance.client?.auth.currentUser?.email
+                : AuthState.instance.currentUser?.email) ??
+            'demo@guardcall.local')
+        .trim()
+        .toLowerCase();
+
+    if (!isConfigured) {
+      // --- OFFLINE / DEMO MODE ---
+      final invIndex = _inMemoryInvitations.indexWhere((i) => i.id == invitationId);
+      if (invIndex == -1) {
+        throw ArgumentError('Invitation not found: $invitationId');
+      }
+      final invitation = _inMemoryInvitations[invIndex];
+
+      // 1. Expiration check
+      if (invitation.expiresAt != null && invitation.expiresAt!.isBefore(DateTime.now())) {
+        _inMemoryInvitations[invIndex] = invitation.copyWith(status: 'expired');
+        await _saveToStorage();
+        throw StateError('Cannot accept an expired invitation.');
+      }
+
+      // 2. Status validation
+      if (invitation.status == 'accepted') {
+        throw StateError('Invitation has already been accepted.');
+      }
+      if (invitation.status == 'revoked') {
+        throw StateError('Cannot accept a revoked invitation.');
+      }
+      if (invitation.status == 'expired') {
+        throw StateError('Cannot accept an expired invitation.');
+      }
+      if (invitation.status != 'pending') {
+        throw StateError('Cannot accept invitation with status "${invitation.status}".');
+      }
+
+      // 3. Recipient email validation
+      if (effectiveEmail.isEmpty) {
+        throw StateError('Caregiver email is required to accept an invitation.');
+      }
+      if (invitation.invitedEmail.trim().toLowerCase() != effectiveEmail) {
+        throw ArgumentError(
+          'Unauthorized: Invitation was sent to "${invitation.invitedEmail}", but current user is "$effectiveEmail".',
+        );
+      }
+
+      // 4. Reject self-acceptance
+      if (invitation.ownerUserId == effectiveUserId) {
+        throw StateError('Self-acceptance is rejected: Owner cannot accept their own invitation.');
+      }
+
+      // 5. Prevent duplicate active relationships
+      final existingIndex = _inMemoryRelationships.indexWhere(
+        (r) => r.ownerUserId == invitation.ownerUserId && r.caregiverUserId == effectiveUserId,
+      );
+      if (existingIndex != -1) {
+        final existing = _inMemoryRelationships[existingIndex];
+        if (existing.enabled) {
+          throw StateError(
+            'Duplicate active relationship: An active relationship already exists between this owner and caregiver.',
+          );
+        }
+        // Re-activate if previously disabled
+        final updatedRel = existing.copyWith(
+          enabled: true,
+          relationship: invitation.relationship ?? existing.relationship,
+          displayName: invitation.displayName ?? caregiverDisplayName ?? existing.displayName,
+          updatedAt: DateTime.now(),
+        );
+        _inMemoryRelationships[existingIndex] = updatedRel;
+        _inMemoryInvitations[invIndex] = invitation.copyWith(status: 'accepted');
+        await _saveToStorage();
+        _relationshipChangeController.add(updatedRel);
+        return updatedRel;
+      }
+
+      // 6. Create active relationship & transition invitation
+      final newRel = FamilyRelationship(
+        id: 'rel_${DateTime.now().millisecondsSinceEpoch}',
+        ownerUserId: invitation.ownerUserId,
+        caregiverUserId: effectiveUserId,
+        relationship: invitation.relationship,
+        displayName: invitation.displayName ?? caregiverDisplayName,
+        enabled: true,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      _inMemoryRelationships.add(newRel);
+      _inMemoryInvitations[invIndex] = invitation.copyWith(status: 'accepted');
+      await _saveToStorage();
+      _relationshipChangeController.add(newRel);
+      return newRel;
+    }
+
+    // --- CLOUD SUPABASE MODE ---
+    final client = SupabaseService.instance.client;
+    if (client == null) throw StateError('Supabase client unavailable.');
+
+    final currentAuthUser = client.auth.currentUser;
+    if (currentAuthUser == null && caregiverUserId == null) {
+      throw StateError('Authentication required to accept an invitation.');
+    }
+
+    try {
+      // 1. Fetch invitation from cloud
+      final invRes = await client
+          .from('family_invitations')
+          .select()
+          .eq('id', invitationId)
+          .maybeSingle();
+
+      if (invRes == null) {
+        throw ArgumentError('Invitation not found: $invitationId');
+      }
+      final invitation = FamilyInvitation.fromMap(invRes);
+
+      // 2. Expiration check
+      if (invitation.expiresAt != null && invitation.expiresAt!.isBefore(DateTime.now())) {
+        await client
+            .from('family_invitations')
+            .update({'status': 'expired'})
+            .eq('id', invitationId);
+        throw StateError('Cannot accept an expired invitation.');
+      }
+
+      // 3. Status validation
+      if (invitation.status == 'accepted') {
+        throw StateError('Invitation has already been accepted.');
+      }
+      if (invitation.status == 'revoked') {
+        throw StateError('Cannot accept a revoked invitation.');
+      }
+      if (invitation.status == 'expired') {
+        throw StateError('Cannot accept an expired invitation.');
+      }
+      if (invitation.status != 'pending') {
+        throw StateError('Cannot accept invitation with status "${invitation.status}".');
+      }
+
+      // 4. Recipient verification
+      if (invitation.invitedEmail.trim().toLowerCase() != effectiveEmail) {
+        throw ArgumentError(
+          'Unauthorized: Invitation was sent to "${invitation.invitedEmail}", but current user is "$effectiveEmail".',
+        );
+      }
+
+      // 5. Self-acceptance check
+      if (invitation.ownerUserId == effectiveUserId) {
+        throw StateError('Self-acceptance is rejected: Owner cannot accept their own invitation.');
+      }
+
+      // 6. Duplicate active relationship prevention
+      final existingRelRes = await client
+          .from('family_relationships')
+          .select()
+          .eq('owner_user_id', invitation.ownerUserId)
+          .eq('caregiver_user_id', effectiveUserId)
+          .maybeSingle();
+
+      if (existingRelRes != null) {
+        final existing = FamilyRelationship.fromMap(existingRelRes);
+        if (existing.enabled) {
+          throw StateError(
+            'Duplicate active relationship: An active relationship already exists between this owner and caregiver.',
+          );
+        }
+        final updatedRes = await client
+            .from('family_relationships')
+            .update({
+              'enabled': true,
+              'relationship': invitation.relationship ?? existing.relationship,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', existing.id)
+            .select()
+            .single();
+
+        await client
+            .from('family_invitations')
+            .update({'status': 'accepted'})
+            .eq('id', invitationId);
+
+        final updatedRel = FamilyRelationship.fromMap(updatedRes);
+        final memIdx = _inMemoryRelationships.indexWhere((r) => r.id == updatedRel.id);
+        if (memIdx != -1) {
+          _inMemoryRelationships[memIdx] = updatedRel;
+        } else {
+          _inMemoryRelationships.add(updatedRel);
+        }
+        _relationshipChangeController.add(updatedRel);
+        return updatedRel;
+      }
+
+      // 7. Insert new relationship & update invitation
+      final relData = <String, dynamic>{
+        'owner_user_id': invitation.ownerUserId,
+        'caregiver_user_id': effectiveUserId,
+        'relationship': invitation.relationship,
+        'enabled': true,
+      };
+      if (invitation.displayName != null || caregiverDisplayName != null) {
+        relData['display_name'] = invitation.displayName ?? caregiverDisplayName;
+      }
+
+      final relRes = await client
+          .from('family_relationships')
+          .insert(relData)
+          .select()
+          .single();
+
+      await client
+          .from('family_invitations')
+          .update({'status': 'accepted'})
+          .eq('id', invitationId);
+
+      final createdRel = FamilyRelationship.fromMap(relRes);
+      _inMemoryRelationships.add(createdRel);
+      _relationshipChangeController.add(createdRel);
+      return createdRel;
+    } catch (e) {
+      developer.log('Failed to accept invitation: $e', name: 'FamilyRelationshipService', error: e);
+      rethrow;
+    }
+  }
+
   /// Resets in-memory state for testing.
   void resetForTesting() {
     _initDemoData();
+  }
+
+  /// Clears in-memory relationships and invitations for empty state testing.
+  void clearForTesting() {
+    _inMemoryRelationships.clear();
+    _inMemoryInvitations.clear();
   }
 }

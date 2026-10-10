@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../app/app_theme.dart';
+import '../../core/services/auth_state.dart';
 import '../../core/services/family_alert_service.dart';
 import '../../core/services/family_relationship_service.dart';
 import '../../core/widgets/glass_card.dart';
@@ -25,11 +26,15 @@ class FamilyScreen extends StatefulWidget {
 class _FamilyScreenState extends State<FamilyScreen> {
   int _selectedViewIndex = 0; // 0 = Elderly View, 1 = Caregiver View
   bool _isLoading = false;
+  String? _isAcceptingId;
 
   List<FamilyRelationship> _relationships = [];
   List<FamilyInvitation> _invitations = [];
   List<FamilyAlertRecord> _caregiverAlerts = [];
+  List<FamilyInvitation> _caregiverPendingInvitations = [];
+  List<FamilyRelationship> _caregiverRelationships = [];
   StreamSubscription<FamilyAlertRecord>? _alertSubscription;
+  StreamSubscription<FamilyRelationship>? _relationshipSubscription;
 
   @override
   void initState() {
@@ -38,11 +43,16 @@ class _FamilyScreenState extends State<FamilyScreen> {
     _alertSubscription = FamilyAlertService.instance.onAlertCreated.listen((_) {
       if (mounted) _loadData();
     });
+    _relationshipSubscription =
+        FamilyRelationshipService.instance.onRelationshipChanged.listen((_) {
+      if (mounted) _loadData();
+    });
   }
 
   @override
   void dispose() {
     _alertSubscription?.cancel();
+    _relationshipSubscription?.cancel();
     super.dispose();
   }
 
@@ -52,11 +62,22 @@ class _FamilyScreenState extends State<FamilyScreen> {
       final rels = await FamilyRelationshipService.instance.getMyRelationships();
       final invs = await FamilyRelationshipService.instance.getMyInvitations();
       final alerts = await FamilyAlertService.instance.getCaregiverAlerts();
+
+      final caregiverEmail = AuthState.instance.currentUser?.email;
+      final caregiverInvs = await FamilyRelationshipService.instance
+          .getPendingInvitationsForCaregiver(email: caregiverEmail);
+      final caregiverRels = await FamilyRelationshipService.instance
+          .getCaregiverRelationships(
+            caregiverUserId: AuthState.instance.currentUser?.id,
+          );
+
       if (mounted) {
         setState(() {
           _relationships = rels;
           _invitations = invs;
           _caregiverAlerts = alerts;
+          _caregiverPendingInvitations = caregiverInvs;
+          _caregiverRelationships = caregiverRels;
           _isLoading = false;
         });
       }
@@ -897,6 +918,31 @@ class _FamilyScreenState extends State<FamilyScreen> {
         ),
         const SizedBox(height: 20),
 
+        // Section: Incoming Caregiver Invitations
+        const SectionHeader(
+          title: 'Incoming Invitations',
+          subtitle: 'Authorization requests awaiting your acceptance',
+        ),
+        const SizedBox(height: 10),
+
+        if (_caregiverPendingInvitations.isEmpty)
+          GlassCard(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: Text(
+                'No pending caregiver invitations for your account.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.textMuted,
+                    ),
+              ),
+            ),
+          )
+        else
+          ..._caregiverPendingInvitations.map((inv) => _buildCaregiverPendingInvitationCard(inv)),
+
+        const SizedBox(height: 24),
+
         // Section: Protected Account Link
         const SectionHeader(
           title: 'Protected Family Member',
@@ -904,55 +950,11 @@ class _FamilyScreenState extends State<FamilyScreen> {
         ),
         const SizedBox(height: 10),
 
-        GlassCard(
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              const CircleAvatar(
-                radius: 24,
-                backgroundColor: AppTheme.navySurfaceLight,
-                child: Icon(Icons.person, color: AppTheme.tealPrimary, size: 28),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isConfigured ? 'Linked Senior Account' : 'Robert Jenkins (Father)',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.textPrimary,
-                          ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Relationship: Primary Caregiver • Active Link',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppTheme.tealLight,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppTheme.tealPrimary.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'LINKED',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.tealPrimary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        if (_caregiverRelationships.isEmpty)
+          _buildDefaultProtectedCard(isConfigured)
+        else
+          ..._caregiverRelationships.map((rel) => _buildCaregiverRelationshipCard(rel, isConfigured)),
+
         const SizedBox(height: 24),
 
         // Section: Recent Alerts
@@ -982,6 +984,299 @@ class _FamilyScreenState extends State<FamilyScreen> {
         const SizedBox(height: 20),
       ],
     );
+  }
+
+  Widget _buildDefaultProtectedCard(bool isConfigured) {
+    return GlassCard(
+      padding: const EdgeInsets.all(18),
+      child: Row(
+        children: [
+          const CircleAvatar(
+            radius: 24,
+            backgroundColor: AppTheme.navySurfaceLight,
+            child: Icon(Icons.person, color: AppTheme.tealPrimary, size: 28),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isConfigured ? 'Linked Senior Account' : 'Robert Jenkins (Father)',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Relationship: Primary Caregiver • Active Link',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppTheme.tealLight,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppTheme.tealPrimary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              'LINKED',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.tealPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCaregiverRelationshipCard(FamilyRelationship rel, bool isConfigured) {
+    final name = rel.displayName ?? (isConfigured ? 'Linked Senior Account' : 'Robert Jenkins (Father)');
+    final relLabel = rel.relationship ?? 'Primary Caregiver';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GlassCard(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            const CircleAvatar(
+              radius: 24,
+              backgroundColor: AppTheme.navySurfaceLight,
+              child: Icon(Icons.person, color: AppTheme.tealPrimary, size: 28),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textPrimary,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Relationship: $relLabel • Active Link',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppTheme.tealLight,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    rel.enabled ? 'Active • Telemetry Enabled' : 'Disabled',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: rel.enabled ? AppTheme.textSecondary : AppTheme.riskCritical,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.tealPrimary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'LINKED',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.tealPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCaregiverPendingInvitationCard(FamilyInvitation inv) {
+    final isAccepting = _isAcceptingId == inv.id;
+    final isAnyAccepting = _isAcceptingId != null;
+    final name = inv.displayName ?? 'Family Account (${inv.ownerUserId})';
+    final currentEmail = AuthState.instance.currentUser?.email;
+    final isWrongUser = currentEmail != null &&
+        currentEmail.trim().isNotEmpty &&
+        inv.invitedEmail.trim().toLowerCase() != currentEmail.trim().toLowerCase();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GlassCard(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: AppTheme.tealPrimary.withValues(alpha: 0.15),
+                  child: const Icon(
+                    Icons.mark_email_unread_outlined,
+                    color: AppTheme.tealPrimary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${inv.relationship ?? "Caregiver"} • Pending Authorization',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AppTheme.tealLight,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppTheme.riskSuspicious.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'PENDING',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.riskSuspicious,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Invited: ${inv.invitedEmail}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              isWrongUser
+                  ? 'This invitation belongs to ${inv.invitedEmail}. Current authenticated user ($currentEmail) is not eligible to accept.'
+                  : 'Accepting establishes mutual authorization to monitor scam threat alerts.',
+              style: TextStyle(
+                fontSize: 12,
+                color: isWrongUser ? AppTheme.riskCritical : AppTheme.textMuted,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                key: Key('accept_invitation_${inv.id}'),
+                onPressed: (isAnyAccepting || isWrongUser) ? null : () => _acceptCaregiverInvitation(inv),
+                icon: isAccepting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.black,
+                        ),
+                      )
+                    : const Icon(Icons.check_circle_outline_rounded, size: 20),
+                label: Text(
+                  isAccepting ? 'Accepting Invitation...' : 'Accept Invitation',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.tealPrimary,
+                  foregroundColor: Colors.black,
+                  disabledBackgroundColor: AppTheme.navySurfaceLight,
+                  disabledForegroundColor: AppTheme.textMuted,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _acceptCaregiverInvitation(FamilyInvitation inv) async {
+    if (_isAcceptingId != null) return;
+    setState(() => _isAcceptingId = inv.id);
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final currentEmail = AuthState.instance.currentUser?.email;
+      final currentUserId = AuthState.instance.currentUser?.id;
+
+      final acceptedRel = await FamilyRelationshipService.instance.acceptInvitation(
+        inv.id,
+        caregiverUserId: currentUserId,
+        caregiverEmail: currentEmail,
+        caregiverDisplayName: AuthState.instance.displayName,
+      );
+
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Invitation accepted! Connected with ${acceptedRel.displayName ?? "family member"}.',
+            ),
+            backgroundColor: AppTheme.tealPrimary,
+          ),
+        );
+        await _loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        final message = e is ArgumentError
+            ? (e.message?.toString() ?? e.toString())
+            : e is StateError
+                ? e.message
+                : 'Failed to accept invitation: $e';
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: AppTheme.riskCritical,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isAcceptingId = null);
+      }
+    }
   }
 
   RiskLevel _getRiskLevel(int score) {
