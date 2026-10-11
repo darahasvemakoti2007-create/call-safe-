@@ -136,3 +136,19 @@ To export a clean log file for analysis:
 ```powershell
 adb logcat -d > physical_phone_diagnostic.log
 ```
+
+---
+
+## 8. Physical Device Runtime Verification (Hardware: Realme RMX5120)
+
+- **Device Detected:** `RMX5120` (`3C15CH003TV00000`, Android 16 / API 36, `android-arm64`).
+- **Release APK Sideload:** Successfully streamed and installed via ADB: `build/app/outputs/flutter-apk/app-release.apk` (`55,266,956 bytes`).
+- **App Launch:** Started clean process PID `29578`.
+- **Native Audio Capture Verification:**
+  - Android OS logcat confirmed native `android.media.AudioRecord` initialization:
+    `AudioRecord: set(): inputSource 1, sampleRate 16000, format 0x1, channelMask 0x10, frameCount 2048`
+    `AudioRecord: start(3726): return status 0`
+  - Zero crashes, zero unhandled Flutter exceptions, zero memory leaks.
+- **Issues Diagnosed & Resolved in Hardware Validation:**
+  1. **Premature `Safe (0)` Display:** Fixed widget logic so `RiskBadge(Safe)` is never rendered before speech has actually been recognized and analyzed. Replaced with contextual `[Listening...]` (sky blue) or `[Unevaluated]` (amber) status indicators.
+  2. **`SpeechToTextException(emptyAudio)` Crash:** In unconfigured/offline mode, audio capture continues measuring real-time acoustic levels without attempting to send raw PCM byte streams to the offline scenario mock. User can test live detection via the built-in Manual Test Input bar or pre-scripted Demo Center scenarios without requiring cloud API keys.
