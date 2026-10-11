@@ -548,14 +548,65 @@ class _LiveMicrophoneScreenState extends State<LiveMicrophoneScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            RiskBadge(
-                              level: _controller.hasEvaluatedSpeech
-                                  ? _controller.currentAnalysis.riskLevel
-                                  : RiskLevel.safe,
-                              score: _controller.hasEvaluatedSpeech
-                                  ? _controller.currentAnalysis.riskScore
-                                  : 0,
-                            ),
+                            if (_controller.hasEvaluatedSpeech)
+                              RiskBadge(
+                                key: const Key('evaluated_risk_badge'),
+                                level: _controller.currentAnalysis.riskLevel,
+                                score: _controller.currentAnalysis.riskScore,
+                              )
+                            else
+                              Container(
+                                key: const Key('unevaluated_status_badge'),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: _controller.hasTranscriptionError
+                                      ? AppTheme.riskHigh.withValues(alpha: 0.15)
+                                      : (isCapturing
+                                          ? AppTheme.skyAccent.withValues(alpha: 0.15)
+                                          : AppTheme.navySurfaceLight),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: _controller.hasTranscriptionError
+                                        ? AppTheme.riskHigh.withValues(alpha: 0.4)
+                                        : (isCapturing
+                                            ? AppTheme.skyAccent.withValues(alpha: 0.4)
+                                            : AppTheme.navyBorder),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _controller.hasTranscriptionError
+                                          ? Icons.error_outline_rounded
+                                          : (isCapturing
+                                              ? Icons.mic_rounded
+                                              : Icons.hourglass_empty_rounded),
+                                      size: 16,
+                                      color: _controller.hasTranscriptionError
+                                          ? AppTheme.riskHigh
+                                          : (isCapturing
+                                              ? AppTheme.skyAccent
+                                              : AppTheme.textSecondary),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      _controller.hasTranscriptionError
+                                          ? 'Unevaluated'
+                                          : (isCapturing ? 'Listening...' : 'Standby'),
+                                      style: TextStyle(
+                                        color: _controller.hasTranscriptionError
+                                            ? AppTheme.riskHigh
+                                            : (isCapturing
+                                                ? AppTheme.skyAccent
+                                                : AppTheme.textSecondary),
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             Text(
                               _controller.hasEvaluatedSpeech
                                   ? 'Threat Score: ${_controller.currentAnalysis.riskScore}/100'

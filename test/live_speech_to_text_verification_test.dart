@@ -832,6 +832,43 @@ void main() {
         findsOneWidget,
       );
 
+      // Verify premature "Safe" badge is NOT displayed and Unevaluated badge is shown
+      expect(find.text('Safe (0)'), findsNothing);
+      expect(find.byKey(const Key('unevaluated_status_badge')), findsOneWidget);
+      expect(find.text('Unevaluated'), findsOneWidget);
+
+      await controller.stopListening();
+    });
+
+    testWidgets('22. LiveMicrophoneScreen displays Listening/Standby badge instead of Safe before speech evaluation', (tester) async {
+      final mockCapture = MockMicrophoneAudioCaptureService();
+      final controller = LiveMicrophoneController(
+        audioCaptureService: mockCapture,
+        permissionHandler: MockMicrophonePermissionHandler(status: MicrophonePermissionStatus.granted),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: LiveMicrophoneScreen(controller: controller),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // In initial idle/standby state:
+      expect(find.text('Safe (0)'), findsNothing);
+      expect(find.byKey(const Key('unevaluated_status_badge')), findsOneWidget);
+      expect(find.text('Standby'), findsNWidgets(2)); // Badge and status text
+
+      // Start listening (monitoring acoustic levels without speech recognized yet):
+      await controller.startListening();
+      mockCapture.setState(AudioCaptureState.capturing);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Safe (0)'), findsNothing);
+      expect(find.text('Listening...'), findsOneWidget);
+      expect(find.text('Awaiting Speech...'), findsOneWidget);
+
       await controller.stopListening();
     });
   });

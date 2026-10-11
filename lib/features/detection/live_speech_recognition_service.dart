@@ -232,6 +232,11 @@ class DefaultLiveSpeechRecognitionService implements LiveSpeechRecognitionServic
 
   Future<void> _transcribePcmBytes(List<int> pcmBytes) async {
     if (pcmBytes.isEmpty || _isDisposed) return;
+    if (!isConfigured) {
+      // Offline / unconfigured mode: raw acoustic bytes cannot be transcribed
+      // by the offline mock. Audio levels remain active for acoustic metering.
+      return;
+    }
     _isTranscribing = true;
     try {
       // Package raw PCM into standard 16kHz mono WAV container if not already WAV
@@ -262,7 +267,7 @@ class DefaultLiveSpeechRecognitionService implements LiveSpeechRecognitionServic
         _onSegment?.call(segment);
       }
     } catch (e) {
-      _lastError = e.toString();
+      _lastError = e is SpeechToTextException ? e.message : e.toString();
       _onError?.call(_lastError!);
       rethrow;
     } finally {
