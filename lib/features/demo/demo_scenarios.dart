@@ -222,4 +222,106 @@ class DemoScenarios {
       ],
     ),
   ];
+
+  /// Additional scenarios prepared for hackathon competition evaluations.
+  static const List<DemoScenario> organizerScenarios = [
+    hinglishDigitalArrest,
+    midcallPivot,
+  ];
+
+  /// Combined list of all core and extended competition scenarios.
+  static List<DemoScenario> get allWithExtended => [...all, ...organizerScenarios];
+
+  // Scenario 6: Hinglish Digital Arrest (Multilingual Code-Mixed)
+  static const DemoScenario hinglishDigitalArrest = DemoScenario(
+    id: 'hinglish_digital_arrest',
+    title: 'Digital Arrest (Hinglish)',
+    shortDescription: 'Code-mixed Hindi-English extortion claiming illegal customs parcel and demanding immediate UPI fine.',
+    category: 'Indian Law Enforcement Fraud',
+    callerRole: 'Fake Cyber Cell Officer',
+    expectedRiskLevel: RiskLevel.critical,
+    expectedSignals: [
+      'Authority Impersonation',
+      'Fear / Threat',
+      'Isolation',
+      'Financial Pressure',
+      'Urgency',
+    ],
+    conversationLines: [
+      ConversationLine(
+        speaker: Speaker.caller,
+        text: "Hello, this is Inspector Rathore from Mumbai Crime Branch and Cyber Cell. Aapke Aadhar card par illegal parcel pakda gaya hai.",
+      ),
+      ConversationLine(
+        speaker: Speaker.user,
+        text: "Kya? Kaunsa parcel? Maine kuch nahi bheja.",
+      ),
+      ConversationLine(
+        speaker: Speaker.caller,
+        text: "Parcel mein drugs aur fake passports hain. Aapke khilaf non-bailable arrest warrant issue ho gaya hai.",
+      ),
+      ConversationLine(
+        speaker: Speaker.user,
+        text: "Yeh galat hai sir! Main 68 saal ka retired pensioner hoon.",
+      ),
+      ConversationLine(
+        speaker: Speaker.caller,
+        text: "Aap digital arrest mein hain. Phone disconnect mat karna aur kisi ko mat batana.",
+      ),
+      ConversationLine(
+        speaker: Speaker.caller,
+        text: "Verification ke liye safe account mein transfer karo turant paise via UPI, nahi toh police bhej rahe hain.",
+      ),
+    ],
+  );
+
+  // Scenario 7: Mid-Call Pivot (Small Talk into Scam)
+  static const DemoScenario midcallPivot = DemoScenario(
+    id: 'midcall_pivot_scam',
+    title: 'Mid-Call Pivot (Small Talk to Scam)',
+    shortDescription: 'Starts as casual friendly neighborhood check-in and escalates into urgent account freeze and OTP harvesting.',
+    category: 'Conversational Social Engineering',
+    callerRole: 'Neighborhood committee imposter pivoting to Bank Caller',
+    expectedRiskLevel: RiskLevel.critical,
+    expectedSignals: [
+      'Authority Impersonation',
+      'Urgency',
+      'Sensitive Information Request',
+      'Threat',
+    ],
+    conversationLines: [
+      ConversationLine(
+        speaker: Speaker.caller,
+        text: "Namaste Uncle ji, how are you feeling today? Weather has been so pleasant this week.",
+      ),
+      ConversationLine(
+        speaker: Speaker.user,
+        text: "Yes, beta, I was just doing some gardening. Who is speaking?",
+      ),
+      ConversationLine(
+        speaker: Speaker.caller,
+        text: "Uncle, remember Ramesh from the society committee? I was talking with him about the upcoming festival arrangements.",
+      ),
+      ConversationLine(
+        speaker: Speaker.user,
+        text: "Ah, Ramesh! Yes, good to hear from you.",
+      ),
+      ConversationLine(
+        speaker: Speaker.caller,
+        text: "Uncle, actually I am calling because the society bank portal is freezing all senior accounts today.",
+      ),
+      ConversationLine(
+        speaker: Speaker.caller,
+        text: "If we don't complete your verification right now, your account will be blocked within 30 minutes.",
+      ),
+      ConversationLine(
+        speaker: Speaker.user,
+        text: "Oh dear, my pension account? What do I need to do?",
+      ),
+      ConversationLine(
+        speaker: Speaker.caller,
+        text: "Please tell me the OTP you just received so we can clear your account right now.",
+      ),
+    ],
+  );
 }

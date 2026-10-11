@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:guard_call/core/widgets/risk_badge.dart';
 import 'package:guard_call/features/demo/demo_scenario.dart';
+import 'package:guard_call/features/demo/demo_scenarios.dart';
 import 'package:guard_call/features/detection/mock_scam_detection_engine.dart';
 import 'package:guard_call/features/detection/scam_signal.dart';
 import 'package:guard_call/features/sms/sms_scam_analysis_service.dart';
@@ -338,6 +339,72 @@ void main() {
       expect(singleResult.riskLevel, RiskLevel.safe);
       expect(compoundResult.riskLevel, RiskLevel.critical);
       expect(compoundResult.riskScore, greaterThan(singleResult.riskScore + 50));
+    });
+  });
+
+  group('Organizer Evaluation Scenarios (Hinglish, Mid-Call Pivot, Protective Hindi)', () {
+    test('O1: Hinglish Digital Arrest extortion produces Critical risk (85-100)', () async {
+      final scenario = DemoScenarios.hinglishDigitalArrest;
+      final result = await engine.analyzeConversation(scenario.conversationLines);
+
+      expect(result.riskLevel, RiskLevel.critical);
+      expect(result.riskScore, greaterThanOrEqualTo(85));
+      expect(result.isScamLikely, isTrue);
+
+      final types = result.detectedSignals.map((s) => s.type).toSet();
+      expect(types, contains(ScamSignalType.authorityImpersonation));
+      expect(types, contains(ScamSignalType.fearThreat));
+      expect(types, contains(ScamSignalType.financialPressure));
+      expect(types, contains(ScamSignalType.isolation));
+    });
+
+    test('O2: Mid-Call Pivot from friendly small talk into urgent OTP demand triggers Critical threat', () async {
+      final scenario = DemoScenarios.midcallPivot;
+      final result = await engine.analyzeConversation(scenario.conversationLines);
+
+      expect(result.riskLevel, RiskLevel.critical);
+      expect(result.riskScore, greaterThanOrEqualTo(85));
+      expect(result.isScamLikely, isTrue);
+
+      final types = result.detectedSignals.map((s) => s.type).toSet();
+      expect(types, contains(ScamSignalType.authorityImpersonation));
+      expect(types, contains(ScamSignalType.urgency));
+      expect(types, contains(ScamSignalType.sensitiveInformationRequest));
+    });
+
+    test('O3: Protective Hindi advisory mentioning OTP/PIN defensively is evaluated as Safe', () async {
+      const sms =
+          "Satark rahein: Bank kabhi kisi ko OTP mat dena bolti hai. "
+          "Apna secret PIN ya code kisi ko mat share karo. Savdhaan rahein.";
+
+      final result = await smsService.analyzeMessage(sms);
+
+      expect(result.riskLevel, RiskLevel.safe);
+      expect(result.riskScore, lessThanOrEqualTo(30));
+      expect(result.isScamLikely, isFalse);
+      final types = result.detectedSignals.map((s) => s.type).toSet();
+      expect(types, isNot(contains(ScamSignalType.sensitiveInformationRequest)));
+    });
+
+    test('O4: Hinglish Grandchild emergency distress phishing flags Emotional Manipulation and Financial Pressure', () async {
+      const dialogue = [
+        ConversationLine(
+          speaker: Speaker.caller,
+          text: "Dadi main musibat mein hoon, mera accident ho gaya hospital mein hoon paise chahiye.",
+        ),
+        ConversationLine(
+          speaker: Speaker.caller,
+          text: "Mummy papa ko mat batana, safe account mein transfer karo turant paise via UPI.",
+        ),
+      ];
+
+      final result = await engine.analyzeConversation(dialogue);
+
+      expect(result.riskLevel, isIn([RiskLevel.high, RiskLevel.critical]));
+      expect(result.riskScore, greaterThanOrEqualTo(70));
+      final types = result.detectedSignals.map((s) => s.type).toSet();
+      expect(types, contains(ScamSignalType.emotionalManipulation));
+      expect(types, contains(ScamSignalType.financialPressure));
     });
   });
 }

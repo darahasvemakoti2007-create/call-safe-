@@ -154,6 +154,7 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
     if (hasIsolation && hasThreat) combinationBonuses += 10;
     if (hasEmotional && hasFinancial) combinationBonuses += 10;
     if (hasAuthority && hasSensitiveInfo) combinationBonuses += 15;
+    if (hasThreat && hasSensitiveInfo) combinationBonuses += 15;
     if (hasThreat && hasFinancial) combinationBonuses += 10;
     if (hasRemote && hasUrgency) combinationBonuses += 10;
     if (hasRemote && (hasAuthority || hasThreat)) combinationBonuses += 15;
@@ -282,6 +283,14 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'available balance is',
       'if you did not make this purchase',
       'was charged',
+      // Multilingual / Hinglish protective phrases
+      'kabhi kisi ko otp mat dena',
+      'bank kabhi otp nahi maangta',
+      'kisi ko otp mat share karo',
+      'kisi ko pin mat dena',
+      'otp share mat kijiye',
+      'savdhaan rahein',
+      'satark rahein',
     ];
 
     for (final pattern in protectivePatterns) {
@@ -322,6 +331,24 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'microsoft technical support',
       'technical support',
       'it support',
+      // Multilingual / Hinglish authority impersonation
+      'police aayegi',
+      'police aa rahi hai',
+      'cbi officer bol raha hoon',
+      'crime branch se hoon',
+      'crime branch se bol raha',
+      'mumbai police',
+      'delhi police',
+      'crime branch',
+      'thaana',
+      'court se warrant',
+      'bank manager bol raha',
+      'bank portal',
+      'bank official',
+      'society bank',
+      'cyber cell se',
+      'trai department',
+      'dot department',
     ];
 
     for (final pattern in authorityPatterns) {
@@ -356,6 +383,17 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'right now or',
       'right now before',
       'right now so',
+      // Multilingual / Hinglish urgency
+      'jaldi karo',
+      'turant',
+      'abhi ke abhi',
+      'samay nahi hai',
+      'fatafat',
+      '10 minute mein',
+      '30 minute mein',
+      'turant karo',
+      'abhi karo',
+      'time khatam',
     ];
 
     for (final pattern in urgencyPatterns) {
@@ -416,6 +454,18 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'trojan virus',
       'viruses on your computer',
       'computer has been infected',
+      // Multilingual / Hinglish threats
+      'arrest ho jaoge',
+      'arrest warrant issue',
+      'jail bhej denge',
+      'account band ho jayega',
+      'police bhej rahe hain',
+      'fir darj',
+      'digital arrest',
+      'digital custody',
+      'power cut ho jayegi',
+      'bijli kat jayegi',
+      'sim block ho jayega',
     ];
 
     for (final pattern in threatPatterns) {
@@ -447,7 +497,9 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
           lower.contains('no sensitive information') ||
           lower.contains('security tip') ||
           lower.contains('stay vigilant') ||
-          lower.contains('beware of')) {
+          lower.contains('beware of') ||
+          lower.contains('mat dena') ||
+          lower.contains('mat share')) {
         continue;
       }
 
@@ -460,7 +512,12 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
           lower.contains('read back') ||
           lower.contains('read me') ||
           lower.contains('give me') ||
-          lower.contains('disclose ');
+          lower.contains('disclose ') ||
+          // Multilingual / Hinglish solicitation verbs
+          lower.contains('batao') ||
+          lower.contains('bataiye') ||
+          lower.contains('bolo') ||
+          lower.contains('karo');
 
       final hasCredentialTerm = lower.contains('otp') ||
           lower.contains('pin') ||
@@ -481,7 +538,15 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
           lower.contains('tell me the otp') ||
           lower.contains('tell me your pin') ||
           lower.contains('secret pin') ||
-          lower.contains('tell me the code')) {
+          lower.contains('tell me the code') ||
+          // Multilingual / Hinglish harvesting phrases
+          lower.contains('otp batao') ||
+          lower.contains('otp bataiye') ||
+          lower.contains('otp bolo') ||
+          lower.contains('pin batao') ||
+          lower.contains('pin bataiye') ||
+          lower.contains('code batao') ||
+          lower.contains('jo otp aaya')) {
         return true;
       }
     }
@@ -521,6 +586,20 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'safe account',
       'deposit the funds',
       'deposit money',
+      // Multilingual / Hinglish financial demands
+      'paise bhejo',
+      'paise transfer',
+      'paise jama karo',
+      'paise daalo',
+      'paise chahiye',
+      'via upi',
+      'upi se',
+      'upi kar do',
+      'turant pay karo',
+      'turant transfer karo',
+      'safe account mein transfer',
+      'fine bharna hoga',
+      'penalty bharni hogi',
     ];
 
     for (final pattern in financialPatterns) {
@@ -549,6 +628,18 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       "don't hang up",
       'keep this confidential',
       'keep this secret',
+      // Multilingual / Hinglish isolation
+      'kisi ko mat batana',
+      'kisi se baat mat karo',
+      'ghar walon ko mat batao',
+      'mummy papa ko mat batana',
+      'parents ko mat batana',
+      'family ko mat batana',
+      'phone mat kaatna',
+      'call disconnect mat karo',
+      'call cut mat karna',
+      'line par raho',
+      'video call par raho',
     ];
 
     for (final pattern in isolationPatterns) {
@@ -567,6 +658,12 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'hospital and i need money',
       'accident and i need',
       'in trouble and need help',
+      // Multilingual / Hinglish emotional manipulation
+      'dadi main musibat mein hoon',
+      'nani main musibat mein hoon',
+      'mera accident ho gaya',
+      'police ne pakad liya',
+      'hospital mein hoon paise chahiye',
     ];
 
     for (final pattern in emotionalPatterns) {
@@ -589,6 +686,12 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'screen share',
       'remote desktop',
       'remote control',
+      // Multilingual / Hinglish remote access
+      'app download karo',
+      'app install karo',
+      'screen share karo',
+      'anydesk download',
+      'teamviewer download',
     ];
 
     for (final pattern in remotePatterns) {
@@ -616,6 +719,10 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
       'pay at http',
       'pay at https',
       'http://',
+      // Multilingual / Hinglish link directives
+      'link pe click karo',
+      'link kholo',
+      'link par tap karo',
     ];
 
     for (final pattern in explicitLinkPatterns) {
@@ -667,7 +774,12 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
         firstHalf.contains('accident') ||
         firstHalf.contains('kyc') ||
         firstHalf.contains('tax') ||
-        firstHalf.contains('support');
+        firstHalf.contains('support') ||
+        firstHalf.contains('aadhar') ||
+        firstHalf.contains('parcel') ||
+        firstHalf.contains('namaste') ||
+        firstHalf.contains('society') ||
+        firstHalf.contains('crime');
 
     final hasLaterAction = secondHalf.contains('otp') ||
         secondHalf.contains('money') ||
@@ -675,7 +787,10 @@ class MockScamDetectionEngine implements ScamDetectionEngine {
         secondHalf.contains('upi') ||
         secondHalf.contains('blocked') ||
         secondHalf.contains('anydesk') ||
-        secondHalf.contains('code');
+        secondHalf.contains('code') ||
+        secondHalf.contains('paise') ||
+        secondHalf.contains('batao') ||
+        secondHalf.contains('band');
 
     return hasInitialSetup && hasLaterAction;
   }
